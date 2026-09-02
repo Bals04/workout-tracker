@@ -1,0 +1,20 @@
+{
+  "name": "bals-workout-planner",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Bals workout planner — a PWA for planning and tracking Monday-to-Friday workouts.",
+  "scripts": {
+    "start": "node tools/serve.js",
+    "dev": "node tools/serve.js",
+    "build": "node tools/build.js",
+    "icons": "node tools/make-icons.js",
+    "shots": "node tools/shots.js",
+    "test": "playwright test"
+  },
+  "dependencies": {
+    "@bryllim/workout-guide": "^1.0.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.62.1"
+  }
+}
