@@ -2,12 +2,12 @@ import { test, expect } from '@playwright/test';
 import { openApp, tab, WEDNESDAY, MONDAY } from './helpers';
 
 test.describe('Top bar', () => {
-  test('shows the product name and version', async ({ page }) => {
+  test('shows the product name', async ({ page }) => {
     await openApp(page, WEDNESDAY);
     await expect(page.locator('.brand__name')).toHaveText('Bals workout planner');
-    await expect(page.locator('.brand__ver')).toHaveText('v1.0');
-    // the h1 is the product name
-    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Bals workout planner');
+    await expect(page.locator('.brand__meta')).toHaveCount(0);
+    // One page heading, with the product brand in the app bar.
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Gym Progress Tracker');
     await expect(page).toHaveTitle(/Bals workout planner v1\.0/);
   });
 

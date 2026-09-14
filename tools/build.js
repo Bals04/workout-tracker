@@ -1,5 +1,8 @@
 /* Builds `dist/` — exactly the files the app needs at runtime.
-   Drag that folder onto Netlify (or any static host).
+
+   On Vercel this runs automatically (see vercel.json) and dist/
+   is published. Locally it produces a folder you can hand to any
+   static host, or drag onto Netlify Drop.
 
    Run:  npm run build                                        */
 
@@ -12,11 +15,12 @@ const DIST = path.join(ROOT, 'dist');
 /* Everything here is required at runtime. node_modules, tools,
    tests and screenshots are deliberately absent. */
 const FILES = ['index.html', 'app.webmanifest', 'sw.js'];
-const DIRS  = ['css', 'js', 'data', 'icons', 'assets'];
+const DIRS  = ['css', 'js', 'data', 'icons', 'assets', 'mascot', 'fonts'];
 const DOCS  = ['ATTRIBUTION.md', 'LICENSE-ASSETS'];   // CC BY-SA requires these travel with the art
 
-/* Netlify reads this at deploy time. Sensible caching: never stale
-   the service worker, cache the immutable artwork hard. */
+/* Netlify reads this at deploy time; Vercel uses vercel.json
+   instead and simply ignores it. Sensible caching either way:
+   never stale the service worker, cache the artwork hard. */
 const HEADERS = `/sw.js
   Cache-Control: public, max-age=0, must-revalidate
 

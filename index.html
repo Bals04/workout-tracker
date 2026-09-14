@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Bals workout planner v1.0</title>
 <meta name="description" content="Plan and track your Monday–Friday workouts. Set your own sets and reps, mark rest days, works offline.">
-<meta name="theme-color" content="#0B0D10" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#141615" media="(prefers-color-scheme: dark)">
 <meta name="theme-color" content="#F4F6F8" media="(prefers-color-scheme: light)">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -14,6 +14,8 @@
 <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icons/icon-180.png">
 <link rel="stylesheet" href="css/app.css">
+<link rel="stylesheet" href="css/training.css">
+<link rel="preload" href="fonts/Montserrat.ttf" as="font" type="font/ttf" crossorigin>
 </head>
 <body>
 
@@ -36,12 +38,7 @@
         </svg>
       </span>
       <span class="brand__text">
-        <h1 class="brand__name">Bals workout planner</h1>
-        <span class="brand__meta">
-          <span class="brand__ver">v1.0</span>
-          <span class="brand__dot" aria-hidden="true"></span>
-          <span class="brand__scope">Mon–Fri</span>
-        </span>
+        <p class="brand__name">Bals workout planner</p>
       </span>
     </div>
     <div class="appbar__actions">
@@ -57,6 +54,18 @@
 
   <!-- ══ Main ══ -->
   <main class="main" id="main" tabindex="-1">
+    <section class="training-intro" aria-labelledby="training-title">
+      <div class="training-intro__copy">
+        <p class="training-kicker">Weekly training log</p>
+        <h1 id="training-title">Gym Progress Tracker</h1>
+        <p class="training-intro__description">Plan your week in a calendar-style board. Add, edit, and delete exercises inside each day.</p>
+      </div>
+      <aside class="coach" aria-label="Coach Baw weekly summary">
+        <img class="coach__mascot" src="mascot/coach-baw.png" alt="Coach Baw, a pixel-art buffalo wearing sunglasses" width="200" height="200">
+        <div class="coach__bubble"><span class="training-kicker">Coach Baw</span><p id="coach-message">Every strong week starts with a plan.</p></div>
+      </aside>
+    </section>
+    <div class="training-summary" id="training-summary" aria-label="Weekly plan totals"></div>
     <section class="view" id="view-today" data-view="today" hidden></section>
     <section class="view" id="view-week"  data-view="week"  hidden></section>
     <section class="view" id="view-stats" data-view="stats" hidden></section>

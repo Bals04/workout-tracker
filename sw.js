@@ -8,7 +8,7 @@
              kept, so days you actually train work offline.
    ═══════════════════════════════════════════════════════════ */
 
-const VERSION = 'v2';
+const VERSION = 'v5';
 const SHELL = `bals-planner-shell-${VERSION}`;
 const ART   = `bals-planner-art-${VERSION}`;
 const ART_LIMIT = 700;            // ≈230 exercises' worth of frames
@@ -17,6 +17,13 @@ const SHELL_ASSETS = [
   './',
   'index.html',
   'css/app.css',
+  'css/training.css',
+  'fonts/Montserrat.ttf',
+  'mascot/coach-baw.png',
+  'mascot/coach-thinking.png',
+  'mascot/exercises.png',
+  'mascot/active-days.png',
+  'mascot/total-volume.png',
   'js/catalog.js',
   'js/store.js',
   'js/ui.js',

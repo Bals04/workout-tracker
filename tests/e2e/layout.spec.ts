@@ -10,7 +10,8 @@ test.describe('Layout integrity', () => {
   test('no stepper clips its value', async ({ page }) => {
     await openApp(page, MONDAY);
     await tab(page, 'Plan').click();
-    await page.locator('.daycard').nth(0).click();
+    await page.getByRole('tab', { name: 'Monday', exact: true }).click();
+    await page.getByRole('button', { name: 'Edit session', exact: true }).click();
     await expect(sheet(page)).toBeVisible();
 
     const clipped = await page.locator('.stepper input').evaluateAll(els =>
@@ -83,7 +84,8 @@ test.describe('Layout integrity', () => {
   test('long session names do not break the hero', async ({ page }) => {
     await openApp(page, MONDAY);
     await tab(page, 'Plan').click();
-    await page.locator('.daycard').nth(0).click();
+    await page.getByRole('tab', { name: 'Monday', exact: true }).click();
+    await page.getByRole('button', { name: 'Edit session', exact: true }).click();
     await page.locator('#day-title').fill('Supercalifragilistic Chest Shoulders Triceps Session');
     await page.locator('#day-title').blur();
     await page.keyboard.press('Escape');

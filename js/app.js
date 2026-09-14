@@ -15,6 +15,59 @@
   };
   let current = 'today';
   let installPrompt = null;
+  let selectedDay = Store.dayKey(new Date()) || 'mon';
+
+  const plannedVolume = day => day.rest ? 0 : day.exercises.reduce((sum, item) =>
+    sum + (Catalog.typeOf(item.slug).metrics.includes('weight')
+      ? (item.sets || 1) * (item.reps || 0) * (item.weight || 0) : 0), 0);
+
+  function renderTrainingSummary() {
+    const days = Store.DAYS.map(key => Store.getDay(key));
+    const active = days.filter(day => !day.rest && day.exercises.length);
+    const count = active.reduce((sum, day) => sum + day.exercises.length, 0);
+    const volume = Math.round(active.reduce((sum, day) => sum + plannedVolume(day), 0));
+    const root = clear(document.getElementById('training-summary'));
+    [[count, 'Exercises', 'exercises'], [active.length, 'Active days', 'active-days'], [volume.toLocaleString(), 'Total volume', 'total-volume']]
+      .forEach(([value, label, pose]) => {
+        root.append(el('div', { class: 'training-stat' }, [
+          el('img', { class: 'training-stat__mascot', src: `mascot/${pose}.png`, alt: '', loading: 'lazy', decoding: 'async' }),
+          el('strong', { class: 'num', text: value }),
+          el('span', { text: label })
+        ]));
+      });
+    document.getElementById('coach-message').textContent = active.length
+      ? `Strong week: ${active.length} active ${active.length === 1 ? 'day' : 'days'} and ${volume.toLocaleString()} kg total planned volume. Keep recovery on the board too.`
+      : 'A fresh week, a fresh start. Add your first exercise and build a plan that works for you.';
+  }
+
+  function confirmAction(title, message, label, action) {
+    const previousFocus = document.activeElement;
+    const dialog = el('dialog', { class: 'confirm-dialog', 'aria-labelledby': 'confirm-title', 'aria-describedby': 'confirm-description' });
+    const close = () => { dialog.close(); dialog.remove(); previousFocus?.focus?.(); };
+    dialog.append(
+      el('img', { class: 'confirm-dialog__mascot', src: 'mascot/coach-thinking.png', alt: '', width: 116, height: 116 }),
+      el('h2', { id: 'confirm-title', text: title }),
+      el('p', { id: 'confirm-description', text: message }),
+      el('div', { class: 'confirm-dialog__actions' }, [
+        el('button', { class: 'btn', type: 'button', autofocus: true, onclick: close }, 'Cancel'),
+        el('button', { class: 'btn btn--danger', type: 'button', onclick: () => { close(); action(); } }, [svg(ICON.trash), label])
+      ])
+    );
+    dialog.addEventListener('cancel', e => { e.preventDefault(); close(); });
+    const isBackdrop = event => {
+      const rect = dialog.getBoundingClientRect();
+      return event.target === dialog && (event.clientX < rect.left || event.clientX > rect.right
+        || event.clientY < rect.top || event.clientY > rect.bottom);
+    };
+    let pressedBackdrop = false;
+    dialog.addEventListener('pointerdown', event => { pressedBackdrop = isBackdrop(event); });
+    dialog.addEventListener('click', event => {
+      if (pressedBackdrop && isBackdrop(event)) close();
+      pressedBackdrop = false;
+    });
+    document.body.append(dialog);
+    dialog.showModal();
+  }
 
   const fmtDate = (d, opts) => d.toLocaleDateString(undefined, opts);
 
@@ -255,50 +308,86 @@
      ══════════════════════════════════════════════════════════ */
   function renderWeek() {
     const root = clear(views.week);
-    const todayKey = Store.dayKey(new Date());
-
-    root.append(el('div', { class: 'sechead', style: 'margin-top:2px' }, [
-      el('h2', { text: 'Your week' }),
-      el('span', { class: 'sechead__hint', text: 'Monday – Friday' })
-    ]));
-
-    const list = el('div', { class: 'daylist' });
-
-    for (const key of Store.DAYS) {
-      const day = Store.getDay(key);
-      const n = day.exercises.length;
-      const totalSets = day.exercises.reduce((s, x) => s + Math.max(1, x.sets || 1), 0);
-
-      const sub = day.rest
-        ? 'Rest day'
-        : n
-          ? `${n} exercise${n === 1 ? '' : 's'} · ${totalSets} sets`
-          : 'Nothing planned';
-
-      const card = el('button', {
-        class: 'daycard' + (day.rest ? ' is-rest' : '') + (key === todayKey ? ' is-today' : ''),
-        type: 'button',
-        onclick: () => openDayEditor(key)
-      }, [
-        el('div', { class: 'daycard__dow', text: key },),
-        el('div', { class: 'daycard__main' }, [
-          el('div', { class: 'daycard__title', text: day.title || Store.DAY_NAMES[key] }),
-          el('div', { class: 'daycard__sub', text: sub + (key === todayKey ? ' · today' : '') }),
-          (() => {
-            if (day.rest || !n) return null;
-            const thumbs = el('div', { class: 'daycard__thumbs' });
-            day.exercises.slice(0, 6).forEach(x => thumbs.append(figure(x.slug)));
-            if (n > 6) thumbs.append(el('div', { class: 'daycard__more', text: `+${n - 6}` }));
-            return thumbs;
-          })()
-        ]),
-        (() => { const c = svg(ICON.chevron, { width: 2.1 }); c.classList.add('daycard__chev'); return c; })()
-      ]);
-
-      list.append(card);
+    renderTrainingSummary();
+    const keys = [...Store.DAYS, 'sat', 'sun'];
+    const names = { ...Store.DAY_NAMES, sat: 'Saturday', sun: 'Sunday' };
+    const tabs = el('div', { class: 'plan-tabs', role: 'tablist', 'aria-label': 'Training days' });
+    for (const key of keys) {
+      const day = Store.DAYS.includes(key) ? Store.getDay(key) : { rest: true, exercises: [] };
+      tabs.append(el('button', {
+        class: 'plan-tab' + (day.rest ? ' is-rest' : ''), type: 'button', role: 'tab',
+        id: `day-tab-${key}`, 'aria-selected': String(selectedDay === key),
+        'aria-controls': 'day-board', tabindex: selectedDay === key ? 0 : -1,
+        'aria-label': names[key],
+        onclick: () => { selectedDay = key; renderWeek(); document.getElementById(`day-tab-${key}`).focus(); },
+        onkeydown: e => {
+          if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) return;
+          e.preventDefault();
+          selectedDay = e.key === 'Home' ? keys[0] : e.key === 'End' ? keys[6]
+            : keys[(keys.indexOf(key) + (e.key === 'ArrowRight' ? 1 : 6)) % 7];
+          renderWeek(); document.getElementById(`day-tab-${selectedDay}`).focus();
+        }
+      }, [el('strong', { text: key }), el('span', { text: day.rest ? 'Rest' : day.exercises.length })]));
     }
-
-    root.append(list, creditNote());
+    root.append(tabs);
+    const dkey = selectedDay;
+    const weekend = !Store.DAYS.includes(dkey);
+    const day = weekend ? { rest: true, exercises: [] } : Store.getDay(dkey);
+    const board = el('section', { class: 'day-board', id: 'day-board', role: 'tabpanel', 'aria-labelledby': `day-tab-${dkey}` });
+    board.append(el('div', { class: 'day-board__head' }, [
+      el('div', {}, [el('span', { class: 'day-label', text: dkey }), el('h2', { text: names[dkey] }),
+        el('p', { text: day.rest ? 'Rest and recovery' : `${day.exercises.length} exercises${day.title && day.title !== names[dkey] ? ` · ${day.title}` : ''}` }),
+        weekend ? null : el('button', { class: 'session-edit', type: 'button', onclick: () => openDayEditor(dkey) }, 'Edit session')]),
+      el('div', { class: 'volume-badge', title: 'Planned sets × reps × weight (kg)' }, [
+        el('strong', { text: Math.round(plannedVolume(day)).toLocaleString() }), el('span', { text: 'Volume' })])
+    ]));
+    if (day.rest) {
+      board.append(restCard('Make room for recovery', weekend ? 'Your training plan runs Monday to Friday. Enjoy your weekend.' : 'Take a breather. Your exercises are saved for when you are ready to train.'));
+    } else if (!day.exercises.length) {
+      board.append(el('div', { class: 'empty' }, [el('h3', { text: 'Your next session starts here' }), el('p', { text: 'Add an exercise to start building this day.' })]));
+    } else {
+      const grid = el('div', { class: 'plan-grid' });
+      day.exercises.forEach(item => {
+        const ex = Catalog.get(item.slug);
+        const edit = () => {
+          // The full day editor preserves reordering and all metric controls.
+          openDayEditor(dkey);
+          requestAnimationFrame(() => [...document.querySelectorAll('.editrow')].find(row => row.querySelector('.editrow__name')?.textContent === (ex?.n || item.slug))?.scrollIntoView({ block: 'nearest' }));
+        };
+        grid.append(el('article', { class: 'plan-exercise' }, [
+          figure(item.slug),
+          el('span', { class: 'muscle-badge', text: ex?.p || 'Exercise' }),
+          el('h3', { text: ex?.n || item.slug }),
+          el('p', { class: 'plan-exercise__target', text: Catalog.summarise(item) }),
+          el('div', { class: 'plan-exercise__actions' }, [
+            el('button', { class: 'btn btn--primary', type: 'button', onclick: edit, 'aria-label': `Edit ${ex?.n || item.slug}` }, 'Edit'),
+            el('button', { class: 'btn btn--danger', type: 'button', 'aria-label': `Delete ${ex?.n || item.slug}`,
+              onclick: () => confirmAction('Delete exercise', `Remove ${ex?.n || item.slug} from ${names[dkey]}?`, 'Delete', () => {
+                Store.removeExercise(dkey, item.uid); renderAll(); UI.toast('Exercise removed');
+              }) }, [svg(ICON.trash), 'Delete'])
+          ])
+        ]));
+      });
+      board.append(grid);
+    }
+    if (!weekend) board.append(el('div', { class: 'day-board__actions' }, [
+      el('button', { class: 'btn btn--rest', type: 'button', onclick: () => { Store.setRest(dkey, !day.rest); renderAll(); } }, [svg(ICON.moon), day.rest ? 'Make training day' : 'Mark rest']),
+      el('button', { class: 'btn', type: 'button', onclick: () => UI.openSheet('Copy day', body => {
+        body.append(el('p', { class: 'copy-description', text: `Copy ${names[dkey]} to another training day.` }));
+        Store.DAYS.filter(key => key !== dkey).forEach(key => body.append(el('button', { class: 'btn btn--block', type: 'button', style: 'margin-top:8px',
+          onclick: () => confirmAction(`Replace ${names[key]}?`, `Replace its exercises with a copy of ${names[dkey]}? This cannot be undone.`, 'Replace day', () => { Store.copyDay(dkey, key); UI.closeSheet(); renderAll(); UI.toast(`Copied to ${names[key]}`); }) }, names[key])));
+      }) }, [svg(ICON.copy), 'Copy day']),
+      el('button', { class: 'btn btn--danger', type: 'button', disabled: !day.exercises.length,
+        onclick: () => confirmAction(`Clear ${names[dkey]}`, `Remove all ${day.exercises.length} exercises from ${names[dkey]}? This can't be undone.`, 'Clear day', () => { Store.clearDay(dkey); renderAll(); UI.toast('Day cleared'); }) }, [svg(ICON.trash), 'Clear day']),
+      el('button', { class: 'btn btn--primary', type: 'button', onclick: () => openPicker(dkey) }, [svg(ICON.plus), 'Add exercise'])
+    ]));
+    root.append(board, el('section', { class: 'backup-panel' }, [
+      el('div', {}, [el('h2', { text: 'Backup and restore' }), el('p', { text: 'Export or import your weekly gym data.' })]),
+      el('div', { class: 'backup-panel__actions' }, [
+        el('button', { class: 'btn', type: 'button', onclick: exportData }, [svg(ICON.install), 'Export backup']),
+        el('button', { class: 'btn', type: 'button', onclick: importData }, [svg(ICON.copy), 'Import backup'])
+      ])
+    ]), creditNote());
   }
 
   /* ══════════════════════════════════════════════════════════
@@ -448,12 +537,11 @@
     if (Store.getDay(dkey).exercises.length) {
       wrap.append(el('button', {
         class: 'btn btn--danger btn--block', type: 'button', style: 'margin-top:16px',
-        onclick: () => {
-          if (!confirm(`Remove every exercise from ${Store.DAY_NAMES[dkey]}?`)) return;
+        onclick: () => confirmAction(`Clear ${Store.DAY_NAMES[dkey]}`, `Remove all ${Store.getDay(dkey).exercises.length} exercises from ${Store.DAY_NAMES[dkey]}? This can't be undone.`, 'Clear day', () => {
           Store.clearDay(dkey);
           UI.toast('Day cleared');
           rebuild && UI.rerenderSheet(rebuild);
-        }
+        })
       }, [svg(ICON.trash, { width: 1.9 }), 'Clear this day']));
     }
     return wrap;
@@ -783,6 +871,7 @@
     current = name;
     for (const [key, node] of Object.entries(views)) node.hidden = key !== name;
     RENDER[name]();
+    renderTrainingSummary();
     for (const tab of document.querySelectorAll('.tab')) {
       const on = tab.dataset.nav === name;
       if (on) tab.setAttribute('aria-current', 'page');
@@ -790,10 +879,10 @@
     }
     movePill();
     if (push && location.hash !== `#${name}`) history.replaceState(null, '', `#${name}`);
-    views[name].scrollIntoView?.({ block: 'start' });
+    window.scrollTo({ top: 0 });
   }
 
-  const renderAll = () => RENDER[current]?.();
+  const renderAll = () => { RENDER[current]?.(); renderTrainingSummary(); };
 
   /* ══════════════════════════════════════════════════════════
      Theme
@@ -801,7 +890,7 @@
   function applyTheme(theme) {
     document.documentElement.dataset.theme = theme;
     const meta = document.querySelector('meta[name="theme-color"]:not([media])');
-    if (meta) meta.content = theme === 'light' ? '#F3F5F8' : '#0B0D10';
+    if (meta) meta.content = theme === 'light' ? '#F1F4F1' : '#141615';
   }
 
   /* ══════════════════════════════════════════════════════════
@@ -844,7 +933,7 @@
     window.addEventListener('orientationchange', movePill);
     if (document.fonts?.ready) document.fonts.ready.then(movePill);
 
-    go(location.hash.slice(1) || 'today', { push: false });
+    go(location.hash.slice(1) || 'week', { push: false });
 
     /* PWA */
     window.addEventListener('beforeinstallprompt', e => {

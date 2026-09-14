@@ -27,7 +27,7 @@ export async function openApp(page: Page, when: Date = WEDNESDAY) {
       }
     } catch {}
   });
-  await page.goto('/');
+  await page.goto('/#today');
   // the catalog fetch must land before the first render is meaningful
   await expect(page.locator('#view-today')).toBeVisible();
   return errors;

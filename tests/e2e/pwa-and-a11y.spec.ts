@@ -96,7 +96,8 @@ test.describe('Accessibility', () => {
   test('the sheet closes on Escape', async ({ page }) => {
     await openApp(page, WEDNESDAY);
     await tab(page, 'Plan').click();
-    await page.locator('.daycard').first().click();
+    await page.getByRole('tab', { name: 'Monday', exact: true }).click();
+    await page.getByRole('button', { name: 'Edit session', exact: true }).click();
     await expect(sheet(page)).toBeVisible();
     await page.keyboard.press('Escape');
     await expect(page.locator('.sheet-host')).toBeHidden();
@@ -105,7 +106,8 @@ test.describe('Accessibility', () => {
   test('the sheet is a labelled modal dialog', async ({ page }) => {
     await openApp(page, WEDNESDAY);
     await tab(page, 'Plan').click();
-    await page.locator('.daycard').first().click();
+    await page.getByRole('tab', { name: 'Monday', exact: true }).click();
+    await page.getByRole('button', { name: 'Edit session', exact: true }).click();
     const dialog = page.getByRole('dialog');
     await expect(dialog).toHaveAttribute('aria-modal', 'true');
     await expect(dialog).toHaveAccessibleName('Monday');
@@ -140,8 +142,9 @@ test.describe('Console health', () => {
   test('no console errors across the three views', async ({ page }) => {
     const errors = await openApp(page, MONDAY);
     await tab(page, 'Plan').click();
-    await page.locator('.daycard').first().click();
-    await page.getByRole('button', { name: 'Add exercise' }).click();
+    await page.getByRole('tab', { name: 'Monday', exact: true }).click();
+    await page.getByRole('button', { name: 'Edit session', exact: true }).click();
+    await sheet(page).getByRole('button', { name: 'Add exercise' }).click();
     await page.getByLabel('Search exercises').fill('squat');
     await page.waitForTimeout(250);
     await page.keyboard.press('Escape');   // picker → back to the day editor

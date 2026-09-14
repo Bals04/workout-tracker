@@ -208,6 +208,7 @@ const UI = (() => {
     clear(sheetBody);
     contentFn(sheetBody);
     host.hidden = false;
+    document.querySelector('.app').inert = true;
     document.body.style.overflow = 'hidden';
     // focus the first useful control
     requestAnimationFrame(() => {
@@ -219,6 +220,7 @@ const UI = (() => {
   function closeSheet() {
     if (host.hidden) return;
     host.hidden = true;
+    document.querySelector('.app').inert = false;
     document.body.style.overflow = '';
     clear(sheetBody);
     const cb = onSheetClose; onSheetClose = null;
@@ -233,6 +235,7 @@ const UI = (() => {
     if (e.target.closest('[data-close-sheet]')) closeSheet();
   });
   document.addEventListener('keydown', e => {
+    if (document.querySelector('dialog[open]')) return;
     if (e.key === 'Escape' && sheetIsOpen()) { e.preventDefault(); closeSheet(); }
     // keep focus inside the sheet
     if (e.key === 'Tab' && sheetIsOpen()) {

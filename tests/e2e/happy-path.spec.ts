@@ -76,22 +76,23 @@ test.describe('Plan view', () => {
     await openApp(page, WEDNESDAY);
     await tab(page, 'Plan').click();
 
-    const cards = page.locator('.daycard');
-    await expect(cards).toHaveCount(5);
-    await expect(cards.nth(0)).toContainText('Push');
-    await expect(cards.nth(1)).toContainText('Pull');
-    await expect(cards.nth(2)).toContainText('Rest day');
-    await expect(cards.nth(3)).toContainText('Legs');
-    await expect(cards.nth(4)).toContainText('Full body');
-    // Wednesday is today
-    await expect(cards.nth(2)).toHaveClass(/is-today/);
+    const cards = page.locator('.plan-tab');
+    await expect(cards).toHaveCount(7);
+    await expect(cards.nth(0)).toHaveAccessibleName('Monday');
+    await expect(cards.nth(4)).toHaveAccessibleName('Friday');
+    await expect(cards.nth(5)).toContainText('Rest');
+    await expect(cards.nth(6)).toContainText('Rest');
+    await expect(cards.nth(2)).toHaveAttribute('aria-selected', 'true');
     await expect(cards.nth(2)).toHaveClass(/is-rest/);
   });
 
-  test('shows set totals per day', async ({ page }) => {
+  test('shows exercises and planned volume per day', async ({ page }) => {
     await openApp(page, WEDNESDAY);
     await tab(page, 'Plan').click();
-    await expect(page.locator('.daycard').nth(0)).toContainText('4 exercises · 13 sets');
+    await page.getByRole('tab', { name: 'Monday', exact: true }).click();
+    await expect(page.locator('.day-board')).toContainText('4 exercises');
+    await expect(page.locator('.plan-exercise')).toHaveCount(4);
+    await expect(page.locator('.volume-badge strong')).toHaveText('3,038');
   });
 });
 

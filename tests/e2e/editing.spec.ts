@@ -3,7 +3,8 @@ import { openApp, tab, sheet, WEDNESDAY, MONDAY } from './helpers';
 
 async function openDay(page, index: number) {
   await tab(page, 'Plan').click();
-  await page.locator('.daycard').nth(index).click();
+  await page.locator('.plan-tab').nth(index).click();
+  await page.getByRole('button', { name: 'Edit session', exact: true }).click();
   await expect(sheet(page)).toBeVisible();
 }
 
@@ -22,7 +23,7 @@ test.describe('Day editor', () => {
     await page.locator('#day-title').blur();
     await page.locator('[data-close-sheet]').last().click();
 
-    await expect(page.locator('.daycard').nth(0)).toContainText('Chest & Shoulders');
+    await expect(page.locator('.day-board')).toContainText('Chest & Shoulders');
     await tab(page, 'Today').click();
     await expect(page.locator('.hero__title')).toHaveText('Chest & Shoulders');
   });
@@ -151,7 +152,7 @@ test.describe('Exercise picker', () => {
   test('searches the library by name', async ({ page }) => {
     await openApp(page, MONDAY);
     await openDay(page, 0);
-    await page.getByRole('button', { name: 'Add exercise' }).click();
+    await sheet(page).getByRole('button', { name: 'Add exercise' }).click();
 
     await page.getByLabel('Search exercises').fill('bulgarian');
     await expect(page.locator('.pickrow')).toHaveCount(2);
@@ -163,7 +164,7 @@ test.describe('Exercise picker', () => {
   test('filters by muscle and by equipment', async ({ page }) => {
     await openApp(page, MONDAY);
     await openDay(page, 0);
-    await page.getByRole('button', { name: 'Add exercise' }).click();
+    await sheet(page).getByRole('button', { name: 'Add exercise' }).click();
 
     await page.getByRole('button', { name: 'Biceps', exact: true }).click();
     const rows = page.locator('.pickrow');
@@ -179,7 +180,7 @@ test.describe('Exercise picker', () => {
   test('reports when nothing matches', async ({ page }) => {
     await openApp(page, MONDAY);
     await openDay(page, 0);
-    await page.getByRole('button', { name: 'Add exercise' }).click();
+    await sheet(page).getByRole('button', { name: 'Add exercise' }).click();
     await page.getByLabel('Search exercises').fill('zzzzqqq');
     await expect(page.locator('.empty h3')).toHaveText('Nothing found');
   });
@@ -187,7 +188,7 @@ test.describe('Exercise picker', () => {
   test('adding an exercise appends it with sensible defaults', async ({ page }) => {
     await openApp(page, MONDAY);
     await openDay(page, 0);
-    await page.getByRole('button', { name: 'Add exercise' }).click();
+    await sheet(page).getByRole('button', { name: 'Add exercise' }).click();
     await page.getByLabel('Search exercises').fill('face pull');
     await expect(page.locator('.pickrow').first()).toContainText('Face Pull');
     await page.locator('.pickrow').first().click();
@@ -203,7 +204,7 @@ test.describe('Exercise picker', () => {
   test('closing the picker returns to the day editor', async ({ page }) => {
     await openApp(page, MONDAY);
     await openDay(page, 0);
-    await page.getByRole('button', { name: 'Add exercise' }).click();
+    await sheet(page).getByRole('button', { name: 'Add exercise' }).click();
     await expect(page.locator('#sheet-title')).toHaveText('Add exercise');
     await page.locator('[data-close-sheet]').last().click();
     await expect(page.locator('#sheet-title')).toHaveText('Monday');
@@ -218,16 +219,17 @@ test.describe('Copy and clear', () => {
     await page.getByRole('button', { name: 'Thursday' }).click();
     await page.locator('[data-close-sheet]').last().click();
 
-    const thursday = page.locator('.daycard').nth(3);
+    await page.getByRole('tab', { name: 'Thursday', exact: true }).click();
+    const thursday = page.locator('.day-board');
     await expect(thursday).toContainText('Push');
-    await expect(thursday).toContainText('4 exercises · 13 sets');
+    await expect(thursday).toContainText('4 exercises');
   });
 
   test('clearing a day removes every exercise', async ({ page }) => {
     await openApp(page, WEDNESDAY);
     await openDay(page, 0);
-    page.once('dialog', d => d.accept());
     await page.getByRole('button', { name: 'Clear this day' }).click();
+    await page.locator('.confirm-dialog').getByRole('button', { name: 'Clear day' }).click();
     await expect(page.locator('.empty h3')).toHaveText('No exercises yet');
   });
 });
