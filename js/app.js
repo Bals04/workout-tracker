@@ -201,7 +201,7 @@
         : null,
       el('div', { class: 'row', style: 'gap:8px' }, [
         el('button', { class: 'btn btn--ghost', type: 'button', style: 'flex:1',
-          onclick: () => openDayEditor(dkey) }, [svg(ICON.calendar, { width: 1.9 }), 'Edit today']),
+          onclick: () => openDayEditor(dkey) }, [svg(ICON.calendarEdit, { width: 1.9 }), 'Edit today']),
         prog.done > 0
           ? el('button', { class: 'btn btn--ghost', type: 'button',
               onclick: () => {
@@ -816,6 +816,29 @@
   /* ══════════════════════════════════════════════════════════
      Shared chrome
      ══════════════════════════════════════════════════════════ */
+  const isStandalone = () =>
+    window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+
+  /* iPadOS 13+ reports itself as a Mac, so test for touch as well. */
+  const isIOS = () =>
+    /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+
+  /* Safari gives no install API — walk the user through Share ▸ Add to Home Screen. */
+  function showIOSInstallHelp() {
+    UI.openSheet('Add to Home Screen', body => {
+      body.append(
+        el('p', { class: 'sheet__lede', text: `iPhone and iPad install apps from the Share menu — ${APP.name} is added the same way.` }),
+        el('ol', { class: 'howto' }, [
+          el('li', {}, [el('strong', { text: 'Tap Share' }), ' in the Safari toolbar (the square with an arrow).']),
+          el('li', {}, [el('strong', { text: 'Choose "Add to Home Screen"' }), ' — scroll down if you do not see it.']),
+          el('li', {}, [el('strong', { text: 'Tap Add' }), '. It opens full screen and works offline.'])
+        ]),
+        el('p', { class: 'howto__note', text: 'Safari only — Chrome and Firefox on iOS cannot install web apps.' })
+      );
+    });
+  }
+
   function installBar() {
     if (!installPrompt) return null;
     return el('div', { class: 'installbar' }, [
@@ -935,11 +958,42 @@
 
     go(location.hash.slice(1) || 'week', { push: false });
 
-    /* PWA */
+    /* PWA — the install affordance lives in the app bar so it is
+       reachable from every view, not just Today. */
+    const installBtn = document.getElementById('btn-install');
+    const showInstall = show => { if (installBtn) installBtn.hidden = !show; };
+
+    if (!isStandalone()) {
+      if (isIOS()) {
+        // Safari has no beforeinstallprompt — the user has to do it by hand,
+        // so the button explains how instead of prompting.
+        showInstall(true);
+        installBtn?.addEventListener('click', showIOSInstallHelp);
+      } else {
+        installBtn?.addEventListener('click', async () => {
+          const p = installPrompt;
+          if (!p) return;
+          installPrompt = null;
+          showInstall(false);
+          p.prompt();
+          await p.userChoice;
+          renderAll();
+        });
+      }
+    }
+
     window.addEventListener('beforeinstallprompt', e => {
       e.preventDefault();
       installPrompt = e;
+      showInstall(true);
       renderAll();
+    });
+
+    window.addEventListener('appinstalled', () => {
+      installPrompt = null;
+      showInstall(false);
+      renderAll();
+      UI.toast('Installed — open it from your home screen');
     });
 
     // boot() awaits the catalog, so `load` has usually fired by now —

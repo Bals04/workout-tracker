@@ -592,6 +592,14 @@ p { margin: 0; }
   padding: 16px 16px calc(20px + var(--safe-b));
   overscroll-behavior: contain;
 }
+
+/* "Add to Home Screen" walkthrough — iOS has no install API */
+.sheet__lede { font-size: .86rem; line-height: 1.62; color: var(--text-dim); }
+.howto { margin: 16px 0 0; padding-left: 21px; display: grid; gap: 12px; }
+.howto li { font-size: .86rem; line-height: 1.6; color: var(--text-dim); }
+.howto li::marker { color: var(--accent); font-weight: 800; }
+.howto strong { color: var(--text); font-weight: 750; }
+.howto__note { margin-top: 16px; font-size: .76rem; line-height: 1.55; color: var(--text-mute); }
 @media (min-width: 700px) {
   .sheet {
     inset: 50% auto auto 50%; transform: translate(-50%, -50%);

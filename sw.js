@@ -31,7 +31,7 @@ const SHELL_ASSETS = [
   'data/exercises.json',
   'data/taxonomy.json',
   'app.webmanifest',
-  'icons/icon.svg',
+  'icons/favicon-32.png',
   'icons/icon-192.png',
   'icons/icon-512.png'
 ];

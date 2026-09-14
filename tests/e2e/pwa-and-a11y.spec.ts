@@ -18,6 +18,28 @@ test.describe('PWA', () => {
     }
   });
 
+  /* The install prompt used to live only inside the Today view, so on the
+     default Plan view there was no way to install at all. It belongs in the
+     app bar now — reachable from every view. */
+  test('the app bar offers an install button once the browser says it is installable', async ({ page }) => {
+    await openApp(page, WEDNESDAY);
+    await tab(page, 'Plan').click();          // the view that never had one
+    await expect(page.locator('#btn-install')).toBeHidden();
+
+    await page.evaluate(() => {
+      const e: any = new Event('beforeinstallprompt');
+      e.prompt = () => { (window as any).__prompted = true; };
+      e.userChoice = Promise.resolve({ outcome: 'accepted' });
+      window.dispatchEvent(e);
+    });
+
+    // reachable from Plan, not just Today
+    await expect(page.locator('#btn-install')).toBeVisible();
+    await page.locator('#btn-install').click();
+    expect(await page.evaluate(() => (window as any).__prompted)).toBe(true);
+    await expect(page.locator('#btn-install')).toBeHidden();
+  });
+
   test('registers a service worker and precaches the shell', async ({ page }) => {
     await openApp(page, WEDNESDAY);
     const ok = await page.evaluate(async () => {
