@@ -91,10 +91,21 @@ const Meals = (() => {
     g.fillStyle = 'rgba(255,255,255,.9)';
     g.fillText(dateOf(when), pad, h - 4.6 * u);
 
-    g.textBaseline = 'top';
-    g.font = font(700, 3.2 * u);
-    g.fillStyle = 'rgba(255,255,255,.85)';
-    g.fillText('Meal snapshot', pad, pad * .7);
+    // "Meal snapshot" as a green pill, so it reads on any background
+    const tag = 'Meal snapshot', size = 3.4 * u, px = 2.6 * u, py = 1.5 * u;
+    g.font = font(750, size);
+    g.textBaseline = 'middle';
+    const tw = g.measureText(tag).width, th = size + py * 2, tx = pad, ty = pad * .7;
+    g.shadowColor = 'rgba(0,0,0,.35)';
+    g.shadowBlur = 1.5 * u;
+    g.fillStyle = '#408C74';   // the app's accent green
+    g.beginPath();
+    if (g.roundRect) g.roundRect(tx, ty, tw + px * 2, th, th / 2);
+    else g.rect(tx, ty, tw + px * 2, th);   // Safari < 16
+    g.fill();
+    g.shadowColor = 'transparent';
+    g.fillStyle = '#FFFFFF';
+    g.fillText(tag, tx + px, ty + th / 2);
 
     if (await badgeReady) {
       const bh = 22 * u, bw = bh * badge.naturalWidth / badge.naturalHeight;
