@@ -73,6 +73,7 @@
     <div class="training-summary" id="training-summary" aria-label="Weekly plan totals"></div>
     <section class="view" id="view-today" data-view="today" hidden></section>
     <section class="view" id="view-week"  data-view="week"  hidden></section>
+    <section class="view" id="view-meals" data-view="meals" hidden></section>
     <section class="view" id="view-stats" data-view="stats" hidden></section>
   </main>
 
@@ -93,6 +94,13 @@
         <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.2" y="5" width="17.6" height="15" rx="2.8" stroke="currentColor" stroke-width="1.9" fill="none"/><path d="M3.2 9.8h17.6M8 3.2v3.4M16 3.2v3.4" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" fill="none"/><rect class="tab__icon-fill" x="6.6" y="12.4" width="4" height="4" rx="1.2" fill="currentColor"/></svg>
       </span>
       <span class="tab__label">Plan</span>
+    </button>
+
+    <button class="tab" type="button" data-nav="meals">
+      <span class="tab__icon">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.6 11.6h16.8a8.4 8.4 0 0 1-16.8 0ZM8.6 20.2h6.8M9.3 3.8c-1 1.2 1 2.4 0 3.8M14.7 3.8c-1 1.2 1 2.4 0 3.8" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
+      </span>
+      <span class="tab__label">Meals</span>
     </button>
 
     <button class="tab" type="button" data-nav="stats">
@@ -141,6 +149,7 @@
 <script src="js/catalog.js"></script>
 <script src="js/store.js"></script>
 <script src="js/ui.js"></script>
+<script src="js/meals.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>

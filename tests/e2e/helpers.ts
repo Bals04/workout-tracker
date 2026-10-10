@@ -33,7 +33,7 @@ export async function openApp(page: Page, when: Date = WEDNESDAY) {
   return errors;
 }
 
-export const tab = (page: Page, name: 'Today' | 'Plan' | 'Progress') =>
-  page.locator(`.tab[data-nav="${name === 'Today' ? 'today' : name === 'Plan' ? 'week' : 'stats'}"]`);
+const NAV = { Today: 'today', Plan: 'week', Meals: 'meals', Progress: 'stats' } as const;
+export const tab = (page: Page, name: keyof typeof NAV) => page.locator(`.tab[data-nav="${NAV[name]}"]`);
 
 export const sheet = (page: Page) => page.locator('.sheet-host:not([hidden]) .sheet');

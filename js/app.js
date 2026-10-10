@@ -11,6 +11,7 @@
   const views = {
     today: document.getElementById('view-today'),
     week:  document.getElementById('view-week'),
+    meals: document.getElementById('view-meals'),
     stats: document.getElementById('view-stats'),
   };
   let current = 'today';
@@ -646,6 +647,122 @@
   }
 
   /* ══════════════════════════════════════════════════════════
+     MEALS — timestamped photos for the coach
+     ══════════════════════════════════════════════════════════ */
+  let mealUrls = [];
+  let mealsPass = 0;
+
+  async function renderMeals() {
+    const pass = ++mealsPass;
+    let meals;
+    try {
+      meals = await Meals.all();
+    } catch (err) {
+      console.error(err);
+      meals = null;
+    }
+    // a newer render started while this one was reading the database
+    if (pass !== mealsPass || current !== 'meals') return;
+
+    mealUrls.forEach(u => URL.revokeObjectURL(u));
+    mealUrls = [];
+    const root = clear(views.meals);
+    const now = new Date();
+    const today = Store.iso(now);
+
+    if (!meals) {
+      root.append(el('div', { class: 'empty' }, [
+        el('h3', { text: 'Meal photos are unavailable' }),
+        el('p', { text: 'This browser is blocking on-device storage, so photos cannot be kept. Try outside private browsing.' })
+      ]));
+      return;
+    }
+
+    const todays = meals.filter(m => m.date === today);
+    root.append(el('div', { class: 'hero' }, [
+      el('div', { class: 'hero__meta' }, [
+        el('div', { class: 'hero__date', text: fmtDate(now, { weekday: 'long', day: 'numeric', month: 'long' }) }),
+        el('h2', { class: 'hero__title', text: 'Meal check-in' }),
+        el('p', { class: 'hero__sub', html: todays.length
+          ? `<b>${todays.length}</b> meal${todays.length === 1 ? '' : 's'} today · last at <b>${Meals.timeOf(new Date(todays[0].ts))}</b>`
+          : 'Snap each meal as you eat it. The time is stamped onto the photo.' })
+      ]),
+      el('img', { class: 'hero__mascot', src: 'mascot/meal-plan.png', alt: '', width: 326, height: 300, decoding: 'async' })
+    ]));
+
+    root.append(el('button', { class: 'btn btn--primary btn--block btn--lg', type: 'button', style: 'margin-top:14px',
+      onclick: snapMeal }, [svg(Meals.ICON_CAMERA, { width: 1.9 }), 'Snap a meal']));
+
+    const byDate = new Map();
+    for (const m of meals) {
+      if (!byDate.has(m.date)) byDate.set(m.date, []);
+      byDate.get(m.date).push(m);
+    }
+    if (!byDate.has(today)) byDate.set(today, []);
+    const dates = [...byDate.keys()].sort((a, b) => b.localeCompare(a)).slice(0, 14);
+
+    for (const date of dates) {
+      const list = byDate.get(date);
+      const d = new Date(date + 'T12:00:00');
+      root.append(el('div', { class: 'sechead' }, [
+        el('h2', { text: date === today ? 'Today' : fmtDate(d, { weekday: 'long', day: 'numeric', month: 'short' }) }),
+        list.length ? el('button', { class: 'chip chip--sm', type: 'button',
+          onclick: () => Meals.share(list) }, list.length > 1 ? `Send all ${list.length}` : 'Send') : null
+      ]));
+      if (!list.length) {
+        root.append(el('div', { class: 'empty' }, [
+          svg(Meals.ICON_CAMERA, { width: 1.7 }),
+          el('h3', { text: 'No meals yet today' }),
+          el('p', { text: 'Your coach sees the exact time each photo was taken.' })
+        ]));
+        continue;
+      }
+      const grid = el('div', { class: 'mealgrid' });
+      for (const m of list) {
+        const url = URL.createObjectURL(m.blob);
+        mealUrls.push(url);
+        const time = Meals.timeOf(new Date(m.ts));
+        grid.append(el('button', { class: 'mealcard', type: 'button', 'aria-label': `Meal at ${time}`,
+          onclick: () => openMeal(m) }, [
+          el('img', { src: url, alt: '', loading: 'lazy', decoding: 'async' }),
+          el('span', { class: 'mealcard__meta' }, [el('strong', { class: 'num', text: time })])
+        ]));
+      }
+      root.append(grid);
+    }
+
+    root.append(el('p', { class: 'credit', text: 'Photos come from the live camera only — not your gallery — and stay on this device until you send them.' }));
+  }
+
+  async function snapMeal() {
+    const meal = await Meals.capture();
+    renderAll();
+    if (meal) openMeal(meal, { fresh: true });
+  }
+
+  function openMeal(meal, { fresh = false } = {}) {
+    const url = URL.createObjectURL(meal.blob);
+    UI.openSheet(fresh ? 'Meal saved' : 'Meal', body => {
+      body.append(
+        el('img', { class: 'mealview', src: url, alt: `Meal photo, stamped ${Meals.stampText(meal.ts)}` }),
+        el('p', { class: 'mealview__stamp num', text: Meals.stampText(meal.ts) }),
+        el('div', { class: 'stack', style: 'margin-top:14px' }, [
+          el('button', { class: 'btn btn--primary btn--block btn--lg', type: 'button',
+            onclick: () => Meals.share([meal]) }, [svg(Meals.ICON_SHARE, { width: 2 }), 'Send to coach']),
+          el('button', { class: 'btn btn--block', type: 'button',
+            onclick: () => Meals.saveToGallery([meal]) }, [svg(ICON.install, { width: 2 }), 'Save to gallery']),
+          el('button', { class: 'btn btn--danger btn--block', type: 'button',
+            onclick: () => confirmAction('Delete photo', `Delete the meal photo from ${Meals.stampText(meal.ts)}?`, 'Delete', async () => {
+              await Meals.remove(meal.id);
+              UI.closeSheet();
+              UI.toast('Photo deleted');
+            }) }, [svg(ICON.trash, { width: 1.9 }), 'Delete'])
+        ])
+      );
+    }, { onClose: () => { URL.revokeObjectURL(url); renderAll(); } });
+  }
+
+  /* ══════════════════════════════════════════════════════════
      PROGRESS
      ══════════════════════════════════════════════════════════ */
   function renderStats() {
@@ -869,7 +986,7 @@
   /* ══════════════════════════════════════════════════════════
      Routing
      ══════════════════════════════════════════════════════════ */
-  const RENDER = { today: renderToday, week: renderWeek, stats: renderStats };
+  const RENDER = { today: renderToday, week: renderWeek, meals: renderMeals, stats: renderStats };
 
   /* Move the tab-bar indicator onto the active tab. Measured from
      the live boxes rather than assuming three equal thirds, so it

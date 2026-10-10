@@ -56,7 +56,7 @@ test.describe('Bottom bar', () => {
     );
     await settle();
 
-    for (const view of ['today', 'week', 'stats'] as const) {
+    for (const view of ['today', 'week', 'meals', 'stats'] as const) {
       await page.locator(`.tab[data-nav="${view}"]`).click();
       await settle();
       const [p, t] = await Promise.all([
@@ -89,7 +89,7 @@ test.describe('Bottom bar', () => {
     const boxes = await page.locator('.tab').evaluateAll(els =>
       els.map(e => { const r = e.getBoundingClientRect(); return { w: r.width, h: r.height }; })
     );
-    expect(boxes).toHaveLength(3);
+    expect(boxes).toHaveLength(4);
     for (const b of boxes) {
       expect(b.h).toBeGreaterThanOrEqual(48);
       expect(b.w).toBeGreaterThanOrEqual(48);
@@ -98,8 +98,8 @@ test.describe('Bottom bar', () => {
 
   test('labels and icons are all present', async ({ page }) => {
     await openApp(page, WEDNESDAY);
-    await expect(page.locator('.tab__label')).toHaveText(['Today', 'Plan', 'Progress']);
-    await expect(page.locator('.tab__icon svg')).toHaveCount(3);
+    await expect(page.locator('.tab__label')).toHaveText(['Today', 'Plan', 'Meals', 'Progress']);
+    await expect(page.locator('.tab__icon svg')).toHaveCount(4);
   });
 
   test('the bar does not cover page content', async ({ page }) => {

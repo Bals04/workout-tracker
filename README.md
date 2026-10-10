@@ -69,6 +69,17 @@ remove them, or copy the whole day onto another weekday.
 **Progress** — the week at a glance, sets logged, volume lifted, current streak,
 and a list of recent sessions.
 
+**Meals** — a meal check-in for your coach. *Snap a meal* opens the live camera
+(not the gallery). The date and time are burned into the photo when it is
+taken. *Send to coach* opens the phone's share sheet (WhatsApp,
+Messages and so on), and *Send all* sends a whole day's meals at once. *Save to
+gallery* uses the share sheet's "Save Image" on iPhone (the only way a web app can
+reach Photos). On Android it downloads the photo, so it shows up in the gallery's
+Download album. Photos are
+kept in IndexedDB on the device. They are not part of the JSON backup. If the
+browser blocks the live camera, the app falls back to the phone's own camera and
+turns down any photo that wasn't taken in the last two minutes.
+
 Settings holds the rest-timer and chime toggles, plus JSON export/import and a
 full reset.
 
