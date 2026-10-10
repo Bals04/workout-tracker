@@ -125,6 +125,12 @@ h1, h2, h3, h4 { font-weight: 800; }
   .backup-panel { flex-wrap: wrap; }
 }
 @media (max-width: 650px) {
+  /* the intro and plan totals describe the Plan tab; elsewhere on a phone they
+     filled the whole screen, so switching tabs looked like nothing happened */
+  .main:not([data-view="week"]) :is(.coach, .training-summary) { display: none; }
+  .main:not([data-view="week"]) { padding-top: 16px; }
+  /* keep the page heading for screen readers, just off screen */
+  .main:not([data-view="week"]) .training-intro { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   .main { padding: 0 16px 100px; }
   .appbar { padding-inline: 16px; }
   .training-intro { grid-template-columns: 1fr; gap: 0; padding-top: 14px; padding-bottom: 22px; }

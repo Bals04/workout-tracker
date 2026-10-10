@@ -97,3 +97,19 @@ test.describe('Layout integrity', () => {
     expect(overflow).toBeLessThanOrEqual(1);
   });
 });
+
+test.describe('Tab switching on a phone', () => {
+  test.use({ viewport: { width: 390, height: 664 } });
+
+  test('each tab shows its own content on the first screen', async ({ page }) => {
+    await openApp(page, MONDAY);
+    for (const [name, view] of [['Today', 'today'], ['Meals', 'meals'], ['Progress', 'stats']] as const) {
+      await tab(page, name).click();
+      const top = await page.locator(`#view-${view}`).evaluate(el => el.getBoundingClientRect().top);
+      expect(top, `${name} content starts on screen`).toBeLessThan(400);
+    }
+    // the plan keeps its header
+    await tab(page, 'Plan').click();
+    await expect(page.locator('.training-intro')).toBeVisible();
+  });
+});

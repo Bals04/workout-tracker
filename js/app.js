@@ -1010,6 +1010,8 @@
     if (!RENDER[name]) name = 'today';
     current = name;
     for (const [key, node] of Object.entries(views)) node.hidden = key !== name;
+    // lets CSS hide the plan-only header on phones, where it fills the screen
+    document.getElementById('main').dataset.view = name;
     RENDER[name]();
     renderTrainingSummary();
     for (const tab of document.querySelectorAll('.tab')) {
