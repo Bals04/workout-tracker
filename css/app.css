@@ -661,6 +661,13 @@ p { margin: 0; }
 
 /* ── Meals ────────────────────────────────────────────────── */
 .hero__mascot { flex: none; width: 104px; height: auto; margin: -6px -4px -10px 0; filter: drop-shadow(0 6px 10px #0005); }
+.mealplan { list-style: none; margin: 0; padding: 0; overflow: hidden; }
+.mealplan__row { display: grid; grid-template-columns: 76px 1fr; gap: 12px; padding: 13px 15px; border-bottom: 1px solid var(--line-soft); }
+.mealplan__row:last-child { border-bottom: 0; }
+.mealplan__n { font-size: .76rem; font-weight: 750; color: var(--accent); padding-top: 1px; }
+.mealplan__food { font-size: .9rem; line-height: 1.5; overflow-wrap: anywhere; }
+.mealplan__food.is-empty { color: var(--text-mute); font-style: italic; }
+.mealplan__edit textarea { resize: vertical; min-height: 64px; font: inherit; font-size: .92rem; line-height: 1.5; }
 .mealgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
 .mealcard {
   appearance: none; cursor: pointer; padding: 0; overflow: hidden; display: flex; flex-direction: column;

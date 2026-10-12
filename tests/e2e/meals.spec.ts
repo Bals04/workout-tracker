@@ -110,3 +110,43 @@ test.describe('Save to gallery on iPhone', () => {
     expect(shared[0][0][1]).toBe('image/jpeg');
   });
 });
+
+test.describe('Meal plan', () => {
+  const PLAN = [
+    '5 boiled eggs, 3 okra, 200g rice',
+    '160g chicken breast, 100g of rice, 2 okra/banana',
+    '160g chicken breast, 200g of rice, 2 okra/banana',
+    '160g chicken breast, 5 okra',
+  ];
+
+  test('meals can be written down, numbered and kept', async ({ page }) => {
+    const errors = await openApp(page, LUNCH);
+    await tab(page, 'Meals').click();
+    await page.getByRole('button', { name: 'Add your meals' }).click();
+
+    for (let i = 0; i < PLAN.length; i++) {
+      if (i) await sheet(page).getByRole('button', { name: /^Add \d+\w\w meal$/ }).click();
+      await sheet(page).locator('textarea').nth(i).fill(PLAN[i]);
+    }
+    // a blank extra meal is dropped on close
+    await sheet(page).getByRole('button', { name: 'Add 5th meal' }).click();
+    await sheet(page).getByRole('button', { name: 'Done' }).click();
+
+    const rows = page.locator('.mealplan__row');
+    await expect(rows).toHaveCount(4);
+    await expect(page.locator('.mealplan__n')).toHaveText(['1st meal', '2nd meal', '3rd meal', '4th meal']);
+    await expect(page.locator('.mealplan__food')).toHaveText(PLAN);
+
+    await page.reload();
+    await tab(page, 'Meals').click();
+    await expect(page.locator('.mealplan__food')).toHaveText(PLAN);
+
+    // remove the 2nd meal; the rest renumber
+    await page.getByRole('button', { name: 'Edit', exact: true }).click();
+    await sheet(page).getByRole('button', { name: 'Remove 2nd meal' }).click();
+    await page.keyboard.press('Escape');
+    await expect(page.locator('.mealplan__food')).toHaveText([PLAN[0], PLAN[2], PLAN[3]]);
+    await expect(page.locator('.mealplan__n')).toHaveText(['1st meal', '2nd meal', '3rd meal']);
+    expect(errors).toEqual([]);
+  });
+});

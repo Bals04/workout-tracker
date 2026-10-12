@@ -693,6 +693,8 @@
     root.append(el('button', { class: 'btn btn--primary btn--block btn--lg', type: 'button', style: 'margin-top:14px',
       onclick: snapMeal }, [svg(Meals.ICON_CAMERA, { width: 1.9 }), 'Snap a meal']));
 
+    root.append(mealPlanCard());
+
     const byDate = new Map();
     for (const m of meals) {
       if (!byDate.has(m.date)) byDate.set(m.date, []);
@@ -732,6 +734,75 @@
     }
 
     root.append(el('p', { class: 'credit', text: 'Photos come from the live camera only — not your gallery — and stay on this device until you send them.' }));
+  }
+
+  /** 1 → "1st", 2 → "2nd", 11 → "11th" … */
+  const ordinal = n => n + (n % 100 >= 11 && n % 100 <= 13 ? 'th' : ['th', 'st', 'nd', 'rd'][n % 10] || 'th');
+
+  /** The day's planned meals, read-only; editing happens in a sheet. */
+  function mealPlanCard() {
+    const plan = Store.getMealPlan().map(t => t.trim());
+    const wrap = el('section', { 'aria-labelledby': 'mealplan-title' }, [
+      el('div', { class: 'sechead' }, [
+        el('h2', { id: 'mealplan-title', text: 'Meal plan' }),
+        plan.length ? el('button', { class: 'chip chip--sm', type: 'button', onclick: openMealPlanEditor }, 'Edit') : null
+      ])
+    ]);
+    if (!plan.length) {
+      wrap.append(el('div', { class: 'empty' }, [
+        el('h3', { text: 'No meal plan yet' }),
+        el('p', { text: 'Write down what each meal of the day should be, so you can check it before you eat.' }),
+        el('button', { class: 'btn btn--primary', type: 'button', onclick: openMealPlanEditor },
+          [svg(ICON.plus, { width: 2.2 }), 'Add your meals'])
+      ]));
+      return wrap;
+    }
+    wrap.append(el('ol', { class: 'card mealplan' }, plan.map((text, i) => el('li', { class: 'mealplan__row' }, [
+      el('span', { class: 'mealplan__n', text: `${ordinal(i + 1)} meal` }),
+      el('span', { class: 'mealplan__food' + (text ? '' : ' is-empty'), text: text || 'Not filled in yet' })
+    ]))));
+    return wrap;
+  }
+
+  function openMealPlanEditor() {
+    const build = body => {
+      const plan = Store.getMealPlan();
+      body.append(el('p', { class: 'sheet__lede', text: 'One line per meal, in the order you eat them. It repeats every day.' }));
+      const list = el('div', { class: 'stack', style: 'margin-top:14px' });
+      plan.forEach((text, i) => {
+        const id = `meal-${i}`;
+        list.append(el('div', { class: 'field mealplan__edit' }, [
+          el('div', { class: 'row' }, [
+            el('label', { for: id, style: 'flex:1', text: `${ordinal(i + 1)} meal` }),
+            el('button', { class: 'iconbtn iconbtn--danger', type: 'button', 'aria-label': `Remove ${ordinal(i + 1)} meal`,
+              onclick: () => { Store.removeMeal(i); UI.rerenderSheet(build); } }, svg(ICON.trash, { width: 1.9 }))
+          ]),
+          el('textarea', { class: 'input', id, rows: 2, placeholder: 'e.g. 160g chicken breast, 100g rice, 2 okra',
+            oninput: e => Store.setMeal(i, e.target.value) }, text)
+        ]));
+      });
+      body.append(list);
+      body.append(el('button', { class: 'btn btn--block', type: 'button', style: 'margin-top:14px',
+        onclick: () => {
+          Store.addMeal();
+          UI.rerenderSheet(build);
+          const fields = document.querySelectorAll('#sheet-body textarea');
+          fields[fields.length - 1]?.focus();
+        } }, [svg(ICON.plus, { width: 2.2 }), `Add ${ordinal(plan.length + 1)} meal`]));
+      body.append(el('button', { class: 'btn btn--primary btn--block', type: 'button', style: 'margin-top:8px',
+        onclick: UI.closeSheet }, 'Done'));
+    };
+    // a fresh plan starts with one blank meal to type into
+    if (!Store.getMealPlan().length) Store.addMeal();
+    UI.openSheet('Meal plan', build, {
+      onClose: () => {
+        // drop meals left blank, so the plan never shows empty rows
+        for (let i = Store.getMealPlan().length - 1; i >= 0; i--) {
+          if (!Store.getMealPlan()[i].trim()) Store.removeMeal(i);
+        }
+        renderAll();
+      }
+    });
   }
 
   async function snapMeal() {

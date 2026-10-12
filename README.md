@@ -80,6 +80,8 @@ kept in IndexedDB on the device. They are not part of the JSON backup. If the
 browser blocks the live camera, the app falls back to the phone's own camera and
 turns down any photo that wasn't taken in the last two minutes.
 
+The **Meal plan** card on the same tab lists the meals of your day in order (1st meal, 2nd meal, …). Tap *Edit* to type each meal, add one or remove one. The plan repeats every day and is part of the JSON backup.
+
 Settings holds the rest-timer and chime toggles, plus JSON export/import and a
 full reset.
 

@@ -66,6 +66,7 @@ const Store = (() => {
         },
       },
       logs: {},
+      mealPlan: [],
       settings: { theme: 'dark', restTimer: true, sound: true }
     };
   }
@@ -95,6 +96,7 @@ const Store = (() => {
       };
     }
     out.logs = (s.logs && typeof s.logs === 'object') ? s.logs : {};
+    out.mealPlan = Array.isArray(s.mealPlan) ? s.mealPlan.filter(m => typeof m === 'string') : [];
     out.settings = { ...base.settings, ...(s.settings || {}) };
     return out;
   }
@@ -310,6 +312,25 @@ const Store = (() => {
     return Math.round(kg);
   }
 
+  /* ── meal plan ───────────────────────────────────────────── */
+  /** The day's meals in order — one free-text line each, same every day. */
+  const getMealPlan = () => state.mealPlan;
+
+  function setMeal(i, text) {
+    state.mealPlan[i] = text;
+    commit();
+  }
+
+  function addMeal() {
+    state.mealPlan.push('');
+    commit();
+  }
+
+  function removeMeal(i) {
+    state.mealPlan.splice(i, 1);
+    commit();
+  }
+
   /* ── settings ────────────────────────────────────────────── */
   function setSetting(k, v) {
     state.settings[k] = v;
@@ -338,6 +359,7 @@ const Store = (() => {
     addExercise, removeExercise, updateExercise, moveExercise, clearDay, copyDay,
     toggleSet, isSetDone, doneCount, progress, resetDayLog,
     history, streak, weekSummary, weekVolume,
+    getMealPlan, setMeal, addMeal, removeMeal,
     setSetting, exportJSON, importJSON, resetAll,
     get state() { return state; },
     get settings() { return state.settings; }
