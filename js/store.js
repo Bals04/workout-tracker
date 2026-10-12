@@ -67,7 +67,9 @@ const Store = (() => {
       },
       logs: {},
       mealPlan: [],
-      settings: { theme: 'dark', restTimer: true, sound: true }
+      mealLogs: {},
+      foods: {},
+      settings: { theme: 'dark', restTimer: true, sound: true, usdaKey: '' }
     };
   }
 
@@ -96,7 +98,10 @@ const Store = (() => {
       };
     }
     out.logs = (s.logs && typeof s.logs === 'object') ? s.logs : {};
-    out.mealPlan = Array.isArray(s.mealPlan) ? s.mealPlan.filter(m => typeof m === 'string') : [];
+    // older saves hold one text line per meal; upgradeMealPlan() converts them once Nutrition is loaded
+    out.mealPlan = Array.isArray(s.mealPlan) ? s.mealPlan.filter(m => typeof m === 'string' || (m && Array.isArray(m.items))) : [];
+    out.mealLogs = (s.mealLogs && typeof s.mealLogs === 'object') ? s.mealLogs : {};
+    out.foods = (s.foods && typeof s.foods === 'object') ? s.foods : {};
     out.settings = { ...base.settings, ...(s.settings || {}) };
     return out;
   }
@@ -313,21 +318,86 @@ const Store = (() => {
   }
 
   /* ── meal plan ───────────────────────────────────────────── */
-  /** The day's meals in order — one free-text line each, same every day. */
+  /* mealPlan: [{ id, items: [{ id, options: [{ food, name, amount, unit }] }] }]
+     An item with several options is an either/or ("okra / banana"),
+     picked per day. The plan repeats daily; mealLogs[date] records
+     which meals were eaten and which options were picked. */
   const getMealPlan = () => state.mealPlan;
+  const findMeal = id => state.mealPlan.find(m => m.id === id);
+  const findItem = (mealId, itemId) => findMeal(mealId)?.items.find(i => i.id === itemId);
 
-  function setMeal(i, text) {
-    state.mealPlan[i] = text;
+  /** Convert text-line meals ("160g chicken breast, 100g rice") to items. */
+  function upgradeMealPlan(parseLine) {
+    if (!state.mealPlan.some(m => typeof m === 'string')) return;
+    state.mealPlan = state.mealPlan.map(m => typeof m !== 'string' ? m : {
+      id: uid(),
+      items: m.split(',').map(t => t.trim()).filter(Boolean).map(t => ({ id: uid(), options: parseLine(t) }))
+    });
     commit();
   }
 
   function addMeal() {
-    state.mealPlan.push('');
+    const meal = { id: uid(), items: [] };
+    state.mealPlan.push(meal);
+    commit();
+    return meal;
+  }
+
+  function removeMeal(mealId) {
+    state.mealPlan = state.mealPlan.filter(m => m.id !== mealId);
     commit();
   }
 
-  function removeMeal(i) {
-    state.mealPlan.splice(i, 1);
+  function addFood(mealId, option) {
+    findMeal(mealId)?.items.push({ id: uid(), options: [option] });
+    commit();
+  }
+
+  /** Add an alternative to an item, making it an either/or. */
+  function addAlternative(mealId, itemId, option) {
+    findItem(mealId, itemId)?.options.push(option);
+    commit();
+  }
+
+  function updateOption(mealId, itemId, index, patch) {
+    const opt = findItem(mealId, itemId)?.options[index];
+    if (!opt) return;
+    Object.assign(opt, patch);
+    commit();
+  }
+
+  /** Remove one option; the item goes with its last option. */
+  function removeOption(mealId, itemId, index) {
+    const meal = findMeal(mealId), item = findItem(mealId, itemId);
+    if (!item) return;
+    item.options.splice(index, 1);
+    if (!item.options.length) meal.items = meal.items.filter(i => i !== item);
+    commit();
+  }
+
+  /** Save a food (from USDA or typed in) to this device. Returns its id. */
+  function saveFood(food) {
+    const id = food.id || uid();
+    state.foods[id] = { ...food, id };
+    commit();
+    return id;
+  }
+
+  const mealDay = date => state.mealLogs[date] || { done: {}, pick: {} };
+
+  function ensureMealDay(date) {
+    return state.mealLogs[date] || (state.mealLogs[date] = { done: {}, pick: {} });
+  }
+
+  function toggleMealDone(date, mealId) {
+    const day = ensureMealDay(date);
+    day.done[mealId] = !day.done[mealId];
+    commit();
+    return day.done[mealId];
+  }
+
+  function pickOption(date, itemId, index) {
+    ensureMealDay(date).pick[itemId] = index;
     commit();
   }
 
@@ -359,7 +429,8 @@ const Store = (() => {
     addExercise, removeExercise, updateExercise, moveExercise, clearDay, copyDay,
     toggleSet, isSetDone, doneCount, progress, resetDayLog,
     history, streak, weekSummary, weekVolume,
-    getMealPlan, setMeal, addMeal, removeMeal,
+    getMealPlan, upgradeMealPlan, addMeal, removeMeal, addFood, addAlternative, updateOption, removeOption,
+    saveFood, mealDay, toggleMealDone, pickOption,
     setSetting, exportJSON, importJSON, resetAll,
     get state() { return state; },
     get settings() { return state.settings; }

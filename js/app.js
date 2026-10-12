@@ -654,6 +654,7 @@
 
   async function renderMeals() {
     const pass = ++mealsPass;
+    Store.upgradeMealPlan(Nutrition.parseLine);
     let meals;
     try {
       meals = await Meals.all();
@@ -693,7 +694,7 @@
     root.append(el('button', { class: 'btn btn--primary btn--block btn--lg', type: 'button', style: 'margin-top:14px',
       onclick: snapMeal }, [svg(Meals.ICON_CAMERA, { width: 1.9 }), 'Snap a meal']));
 
-    root.append(mealPlanCard());
+    root.append(mealPlanCard(today));
 
     const byDate = new Map();
     for (const m of meals) {
@@ -738,71 +739,298 @@
 
   /** 1 → "1st", 2 → "2nd", 11 → "11th" … */
   const ordinal = n => n + (n % 100 >= 11 && n % 100 <= 13 ? 'th' : ['th', 'st', 'nd', 'rd'][n % 10] || 'th');
+  const r0 = n => Math.round(n);
+  const r1 = n => Math.round(n * 10) / 10;
 
-  /** The day's planned meals, read-only; editing happens in a sheet. */
-  function mealPlanCard() {
-    const plan = Store.getMealPlan().map(t => t.trim());
+  /** Today's pick for an either/or item (index into its options). */
+  const pickOf = (day, item) => Math.min(day.pick[item.id] ?? 0, item.options.length - 1);
+  const mealMacros = (meal, day) => Nutrition.sum(meal.items.map(item => Nutrition.macros(item.options[pickOf(day, item)])));
+
+  /** Today's meals: totals, a done-check per meal, and the either/or picks. */
+  function mealPlanCard(date) {
+    const plan = Store.getMealPlan();
+    const day = Store.mealDay(date);
     const wrap = el('section', { 'aria-labelledby': 'mealplan-title' }, [
       el('div', { class: 'sechead' }, [
-        el('h2', { id: 'mealplan-title', text: 'Meal plan' }),
-        plan.length ? el('button', { class: 'chip chip--sm', type: 'button', onclick: openMealPlanEditor }, 'Edit') : null
+        el('h2', { id: 'mealplan-title', text: "Today's meals" }),
+        plan.length ? el('button', { class: 'chip chip--sm', type: 'button', onclick: openMealPlanEditor }, 'Edit plan') : null
       ])
     ]);
     if (!plan.length) {
       wrap.append(el('div', { class: 'empty' }, [
         el('h3', { text: 'No meal plan yet' }),
-        el('p', { text: 'Write down what each meal of the day should be, so you can check it before you eat.' }),
+        el('p', { text: 'Add your meals and the foods in each. You will see protein, carbs, fat and calories, and tick meals off as you eat them.' }),
         el('button', { class: 'btn btn--primary', type: 'button', onclick: openMealPlanEditor },
-          [svg(ICON.plus, { width: 2.2 }), 'Add your meals'])
+          [svg(ICON.plus, { width: 2.2 }), 'Build your meal plan'])
       ]));
       return wrap;
     }
-    wrap.append(el('ol', { class: 'card mealplan' }, plan.map((text, i) => el('li', { class: 'mealplan__row' }, [
-      el('span', { class: 'mealplan__n', text: `${ordinal(i + 1)} meal` }),
-      el('span', { class: 'mealplan__food' + (text ? '' : ' is-empty'), text: text || 'Not filled in yet' })
-    ]))));
+
+    const doneMeals = plan.filter(m => day.done[m.id]);
+    const planned = Nutrition.sum(plan.map(m => mealMacros(m, day)));
+    const eaten = Nutrition.sum(doneMeals.map(m => mealMacros(m, day)));
+    const allDone = doneMeals.length === plan.length;
+    wrap.append(el('div', { class: 'card macros' + (allDone ? ' is-done' : '') }, [
+      el('div', { class: 'macros__head' }, [
+        el('strong', { text: `${doneMeals.length} of ${plan.length} meals done` }),
+        el('span', { text: allDone ? 'Plan followed today' : 'Tick each meal when you finish it' })
+      ]),
+      el('div', { class: 'macros__bar', role: 'progressbar', 'aria-label': 'Meals done today',
+        'aria-valuemin': 0, 'aria-valuemax': plan.length, 'aria-valuenow': doneMeals.length },
+        el('span', { style: `width:${(doneMeals.length / plan.length) * 100}%` })),
+      el('div', { class: 'macros__grid' }, [['Protein', 'p', 'g'], ['Carbs', 'c', 'g'], ['Fat', 'f', 'g'], ['Calories', 'kcal', '']]
+        .map(([label, k, unit]) => el('div', { class: 'macro' }, [
+          el('span', { class: 'macro__label', text: label }),
+          el('strong', { class: 'num', text: `${r0(eaten[k])}` }),
+          el('span', { class: 'macro__of num', text: `of ${r0(planned[k]).toLocaleString()}${unit}` })
+        ])))
+    ]));
+
+    plan.forEach((meal, i) => {
+      const done = !!day.done[meal.id];
+      const m = mealMacros(meal, day);
+      const title = `${ordinal(i + 1)} meal`;
+      wrap.append(el('article', { class: 'planmeal' + (done ? ' is-done' : ''), 'aria-label': title }, [
+        el('div', { class: 'planmeal__head' }, [
+          el('button', { class: 'planmeal__check', type: 'button', 'aria-pressed': String(done), 'aria-label': `${title} done`,
+            onclick: () => {
+              const now = Store.toggleMealDone(date, meal.id);
+              if (now && navigator.vibrate) navigator.vibrate(18);
+              renderAll();
+            } }, svg(ICON.check, { width: 2.8 })),
+          el('h3', { text: title }),
+          el('span', { class: 'planmeal__sum num', text: `${r0(m.p)}g protein · ${r0(m.kcal)} kcal` })
+        ]),
+        meal.items.length
+          ? el('ul', { class: 'planmeal__foods' }, meal.items.map(item => foodRow(item, day, date)))
+          : el('p', { class: 'planmeal__empty', text: 'No foods yet — tap Edit plan.' })
+      ]));
+    });
     return wrap;
   }
 
+  function foodRow(item, day, date) {
+    const pick = pickOf(day, item);
+    const opt = item.options[pick];
+    const mac = Nutrition.macros(opt);
+    const row = el('li', { class: 'food' }, [
+      el('span', { class: 'food__name' }, [
+        opt.name,
+        el('small', { class: 'num', text: mac
+          ? `${r0(mac.kcal)} kcal · ${r1(mac.c)}g carbs · ${r1(mac.f)}g fat`
+          : 'No nutrition data — find it in Edit plan' })
+      ]),
+      el('span', { class: 'food__amt num', text: Nutrition.amountLabel(opt) }),
+      el('span', { class: 'food__p num', text: mac ? `${r1(mac.p)}g` : '—', 'aria-label': mac ? `${r1(mac.p)} grams protein` : 'Protein unknown' })
+    ]);
+    if (item.options.length > 1) {
+      row.append(el('div', { class: 'food__pick', role: 'group', 'aria-label': 'Which one today?' },
+        item.options.map((o, j) => el('button', { class: 'chip chip--sm', type: 'button', 'aria-pressed': String(j === pick),
+          onclick: () => { Store.pickOption(date, item.id, j); renderAll(); } }, `${Nutrition.amountLabel(o)} ${o.name}`))));
+    }
+    return row;
+  }
+
+  /** A fresh portion of a food: one piece if it comes in pieces, else 100 g. */
+  const portion = food => ({ food: food.id, name: food.name, amount: food.piece ? 1 : 100, unit: food.piece ? 'pcs' : 'g' });
+
   function openMealPlanEditor() {
+    const cleanup = () => {
+      // drop meals left without food, so the plan never shows empty cards
+      for (const meal of [...Store.getMealPlan()]) if (!meal.items.length) Store.removeMeal(meal.id);
+      renderAll();
+    };
+    const reopen = () => UI.openSheet('Meal plan', build, { onClose: cleanup });
+
     const build = body => {
       const plan = Store.getMealPlan();
-      body.append(el('p', { class: 'sheet__lede', text: 'One line per meal, in the order you eat them. It repeats every day.' }));
-      const list = el('div', { class: 'stack', style: 'margin-top:14px' });
-      plan.forEach((text, i) => {
-        const id = `meal-${i}`;
-        list.append(el('div', { class: 'field mealplan__edit' }, [
-          el('div', { class: 'row' }, [
-            el('label', { for: id, style: 'flex:1', text: `${ordinal(i + 1)} meal` }),
-            el('button', { class: 'iconbtn iconbtn--danger', type: 'button', 'aria-label': `Remove ${ordinal(i + 1)} meal`,
-              onclick: () => { Store.removeMeal(i); UI.rerenderSheet(build); } }, svg(ICON.trash, { width: 1.9 }))
-          ]),
-          el('textarea', { class: 'input', id, rows: 2, placeholder: 'e.g. 160g chicken breast, 100g rice, 2 okra',
-            oninput: e => Store.setMeal(i, e.target.value) }, text)
-        ]));
+      body.append(el('p', { class: 'sheet__lede', text: 'Add each food with its amount. For foods you swap day to day, add an "or" — you pick one each day.' }));
+      plan.forEach((meal, i) => {
+        const title = `${ordinal(i + 1)} meal`;
+        const sec = el('section', { class: 'mealedit', 'aria-label': title }, [
+          el('div', { class: 'mealedit__head' }, [
+            el('h3', { text: title }),
+            el('button', { class: 'iconbtn iconbtn--danger', type: 'button', 'aria-label': `Remove ${title}`,
+              onclick: () => { Store.removeMeal(meal.id); UI.rerenderSheet(build); } }, svg(ICON.trash, { width: 1.9 }))
+          ])
+        ]);
+        meal.items.forEach(item => {
+          const group = el('div', { class: 'mealedit__item' });
+          item.options.forEach((opt, j) => {
+            if (j) group.append(el('div', { class: 'mealedit__or', text: 'or' }));
+            group.append(optionEditor(meal, item, opt, j, build, reopen));
+          });
+          group.append(el('button', { class: 'linkbtn', type: 'button',
+            onclick: () => openFoodPicker(food => Store.addAlternative(meal.id, item.id, portion(food)), reopen) }, '+ or another food'));
+          sec.append(group);
+        });
+        sec.append(el('button', { class: 'btn btn--block mealedit__add', type: 'button',
+          onclick: () => openFoodPicker(food => Store.addFood(meal.id, portion(food)), reopen) },
+          [svg(ICON.plus, { width: 2.2 }), `Add food to ${title}`]));
+        body.append(sec);
       });
-      body.append(list);
-      body.append(el('button', { class: 'btn btn--block', type: 'button', style: 'margin-top:14px',
-        onclick: () => {
-          Store.addMeal();
-          UI.rerenderSheet(build);
-          const fields = document.querySelectorAll('#sheet-body textarea');
-          fields[fields.length - 1]?.focus();
-        } }, [svg(ICON.plus, { width: 2.2 }), `Add ${ordinal(plan.length + 1)} meal`]));
+      body.append(el('button', { class: 'btn btn--block', type: 'button', style: 'margin-top:16px',
+        onclick: () => { Store.addMeal(); UI.rerenderSheet(build); } },
+        [svg(ICON.plus, { width: 2.2 }), `Add ${ordinal(plan.length + 1)} meal`]));
       body.append(el('button', { class: 'btn btn--primary btn--block', type: 'button', style: 'margin-top:8px',
         onclick: UI.closeSheet }, 'Done'));
     };
-    // a fresh plan starts with one blank meal to type into
+
+    // a fresh plan starts with one meal to fill
     if (!Store.getMealPlan().length) Store.addMeal();
-    UI.openSheet('Meal plan', build, {
-      onClose: () => {
-        // drop meals left blank, so the plan never shows empty rows
-        for (let i = Store.getMealPlan().length - 1; i >= 0; i--) {
-          if (!Store.getMealPlan()[i].trim()) Store.removeMeal(i);
-        }
-        renderAll();
-      }
+    reopen();
+  }
+
+  function optionEditor(meal, item, opt, index, build, reopen) {
+    const food = opt.food && Nutrition.get(opt.food);
+    const set = patch => Store.updateOption(meal.id, item.id, index, patch);
+    const amount = el('input', { class: 'input optedit__amt num', type: 'number', inputmode: 'decimal', min: '0', step: 'any',
+      value: String(opt.amount), 'aria-label': `Amount of ${opt.name}` });
+    amount.addEventListener('change', () => {
+      const v = Number(amount.value);
+      if (v > 0) set({ amount: v }); else amount.value = String(opt.amount);
     });
+    const unit = food?.piece
+      ? el('select', { class: 'select optedit__unit', 'aria-label': `Unit for ${opt.name}`,
+          onchange: e => set({ unit: e.target.value }) },
+          [['g', 'grams'], ['pcs', 'pieces']].map(([v, label]) => el('option', { value: v, selected: v === opt.unit }, label)))
+      : el('span', { class: 'optedit__unit', text: 'grams' });
+    if (!food?.piece && opt.unit === 'pcs' && food) set({ unit: 'g' });
+
+    return el('div', { class: 'optedit' }, [
+      el('div', { class: 'optedit__name' }, [
+        el('strong', { text: opt.name }),
+        food
+          ? el('small', { class: 'num', text: `${r1(food.per100.p)}g protein · ${r0(food.per100.kcal)} kcal per 100 g${food.piece ? ` · 1 pc ≈ ${food.piece} g` : ''}` })
+          : el('button', { class: 'linkbtn', type: 'button',
+              onclick: () => openFoodPicker(f => set({ food: f.id, name: f.name, ...(f.piece ? {} : { unit: 'g', amount: opt.unit === 'pcs' ? 100 : opt.amount }) }), reopen, opt.name) },
+              'Find nutrition')
+      ]),
+      el('div', { class: 'optedit__qty' }, [amount, unit]),
+      el('button', { class: 'iconbtn iconbtn--danger', type: 'button', 'aria-label': `Remove ${opt.name}`,
+        onclick: () => { Store.removeOption(meal.id, item.id, index); UI.rerenderSheet(build); } }, svg(ICON.trash, { width: 1.9 }))
+    ]);
+  }
+
+  /**
+   * Pick a food: your foods first (instant, offline), then the USDA
+   * database online, or type the values in. Closing returns to `back`.
+   */
+  function openFoodPicker(onPick, back, initial = '') {
+    let query = initial;
+    let remote = null;            // null | 'loading' | Error | [results]
+    let manual = false;
+    let paintRemote = () => {};
+
+    const choose = food => { onPick(food); UI.closeSheet(); };
+
+    async function lookUp() {
+      const q = query.trim();
+      if (!q) return;
+      remote = 'loading';
+      paintRemote();
+      try {
+        remote = await Nutrition.usdaSearch(q, Store.settings.usdaKey);
+      } catch (err) {
+        remote = err;
+      }
+      paintRemote();
+    }
+
+    const build = body => {
+      const input = el('input', { class: 'input', type: 'search', value: query, autocomplete: 'off', enterkeyhint: 'search',
+        placeholder: 'Search foods, e.g. chicken breast', 'aria-label': 'Search foods' });
+      const local = el('div', { class: 'foodlist' });
+      const online = el('div', { class: 'foodlist', 'aria-live': 'polite' });
+
+      const paintLocal = () => {
+        clear(local);
+        const found = Nutrition.search(query).slice(0, 40);
+        for (const f of found) {
+          local.append(el('button', { class: 'foodpick', type: 'button', onclick: () => choose(f) }, [
+            el('span', { class: 'foodpick__name', text: f.name }),
+            el('span', { class: 'foodpick__meta num', text: `${r1(f.per100.p)}g protein · ${r0(f.per100.kcal)} kcal / 100 g` })
+          ]));
+        }
+        if (!found.length) local.append(el('p', { class: 'foodlist__note', text: 'Not in your foods yet — search the USDA database below.' }));
+      };
+
+      paintRemote = () => {
+        clear(online);
+        if (remote === null) {
+          online.append(el('button', { class: 'btn btn--block', type: 'button', disabled: !query.trim(), onclick: lookUp },
+            [svg(ICON.search, { width: 2 }), query.trim() ? `Search USDA for "${query.trim()}"` : 'Type a food to search USDA']));
+        } else if (remote === 'loading') {
+          online.append(el('p', { class: 'foodlist__note', text: 'Searching the USDA food database…' }));
+        } else if (remote instanceof Error) {
+          online.append(el('p', { class: 'foodlist__note foodlist__note--error', text: remote.kind === 'limit' || remote.kind === 'key'
+            ? `${remote.message} Add your free food database key in Settings to search more.`
+            : remote.message }));
+          online.append(el('button', { class: 'btn btn--block', type: 'button', onclick: lookUp }, 'Try again'));
+        } else if (!remote.length) {
+          online.append(el('p', { class: 'foodlist__note', text: 'No matches. Try a simpler word, or enter the values yourself.' }));
+        } else {
+          for (const r of remote) {
+            online.append(el('button', { class: 'foodpick', type: 'button', onclick: () => {
+              const id = Store.saveFood({ id: `usda-${r.fdcId}`, name: r.name, per100: r.per100, source: 'usda', fdcId: r.fdcId });
+              choose(Nutrition.get(id));
+            } }, [
+              el('span', { class: 'foodpick__name', text: r.name }),
+              el('span', { class: 'foodpick__meta num', text: `${r1(r.per100.p)}g protein · ${r0(r.per100.kcal)} kcal / 100 g · ${r.kind}` })
+            ]));
+          }
+        }
+      };
+
+      input.addEventListener('input', () => { query = input.value; remote = null; paintLocal(); paintRemote(); });
+      input.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); lookUp(); } });
+
+      body.append(
+        el('div', { class: 'searchwrap' }, [svg(ICON.search, { width: 2 }), input]),
+        el('div', { class: 'eyebrow foodlist__title', text: 'Your foods' }), local,
+        el('div', { class: 'eyebrow foodlist__title', text: 'USDA food database' }), online,
+        el('div', { class: 'eyebrow foodlist__title', text: 'Not listed?' }),
+        manual ? manualFoodForm(choose, query) : el('button', { class: 'btn btn--block btn--ghost', type: 'button',
+          onclick: () => { manual = true; UI.rerenderSheet(build); } }, 'Enter nutrition yourself')
+      );
+      paintLocal();
+      paintRemote();
+    };
+
+    UI.openSheet('Add food', build, { onClose: back });
+  }
+
+  /** Values from a package label, per 100 g. */
+  function manualFoodForm(choose, name) {
+    const field = (id, label, attrs = {}) => el('div', { class: 'field' }, [
+      el('label', { for: id, text: label }),
+      el('input', { class: 'input', id, ...attrs })
+    ]);
+    const num = { type: 'number', inputmode: 'decimal', min: '0', step: 'any' };
+    const form = el('form', { class: 'stack manualfood' }, [
+      field('mf-name', 'Food name', { type: 'text', value: name, required: true, maxlength: '60' }),
+      el('div', { class: 'manualfood__grid' }, [
+        field('mf-p', 'Protein (g / 100 g)', { ...num, required: true }),
+        field('mf-c', 'Carbs (g / 100 g)', { ...num, required: true }),
+        field('mf-f', 'Fat (g / 100 g)', { ...num, required: true }),
+        field('mf-kcal', 'Calories (/ 100 g)', { ...num, placeholder: 'worked out if empty' })
+      ]),
+      field('mf-piece', 'Weight of one piece in g (optional)', { ...num, placeholder: 'e.g. 50 for an egg' }),
+      el('button', { class: 'btn btn--primary btn--block', type: 'submit' }, 'Save food')
+    ]);
+    form.addEventListener('submit', e => {
+      e.preventDefault();
+      const v = id => Number(form.querySelector(`#${id}`).value) || 0;
+      const p = v('mf-p'), c = v('mf-c'), f = v('mf-f');
+      const id = Store.saveFood({
+        name: form.querySelector('#mf-name').value.trim(),
+        per100: { p, c, f, kcal: v('mf-kcal') || r0(p * 4 + c * 4 + f * 9) },
+        ...(v('mf-piece') ? { piece: v('mf-piece') } : {}),
+        source: 'custom'
+      });
+      choose(Nutrition.get(id));
+    });
+    return form;
   }
 
   async function snapMeal() {
@@ -947,6 +1175,17 @@
       body.append(el('div', { class: 'stack' }, [
         toggleCard('Rest timer', 'Count down between sets automatically.', 'restTimer'),
         toggleCard('Chime', 'Play a sound when the rest timer ends.', 'sound')
+      ]));
+
+      body.append(el('div', { class: 'sechead' }, [el('h2', { text: 'Food database' })]));
+      body.append(el('div', { class: 'field' }, [
+        el('label', { for: 'usda-key', text: 'USDA food database key' }),
+        el('input', { class: 'input', id: 'usda-key', type: 'text', autocomplete: 'off', spellcheck: 'false',
+          value: Store.settings.usdaKey || '', placeholder: 'Paste your free key',
+          onchange: e => { Store.setSetting('usdaKey', e.target.value.trim()); UI.toast(e.target.value.trim() ? 'Key saved' : 'Key removed'); } }),
+        el('p', { class: 'field__hint', html: 'Free, takes a minute: sign up at '
+          + '<a href="https://api.data.gov/signup/" target="_blank" rel="noopener">api.data.gov/signup</a> and paste the key here. '
+          + 'Without one, food search is limited to a few searches an hour.' })
       ]));
 
       body.append(el('div', { class: 'sechead' }, [el('h2', { text: 'Your data' })]));

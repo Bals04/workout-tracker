@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, Page } from '@playwright/test';
 import { openApp, tab, sheet, MONDAY } from './helpers';
 
 /* Chromium's fake device stands in for the phone camera. */
@@ -112,41 +112,130 @@ test.describe('Save to gallery on iPhone', () => {
 });
 
 test.describe('Meal plan', () => {
-  const PLAN = [
+  const OLD_PLAN = [
     '5 boiled eggs, 3 okra, 200g rice',
     '160g chicken breast, 100g of rice, 2 okra/banana',
     '160g chicken breast, 200g of rice, 2 okra/banana',
-    '160g chicken breast, 5 okra',
+    '160g chicken breast, 5 oakra',
   ];
 
-  test('meals can be written down, numbered and kept', async ({ page }) => {
+  /** Load the app with the plan as it was saved before foods were itemised. */
+  async function withOldPlan(page: Page) {
     const errors = await openApp(page, LUNCH);
+    await page.evaluate(plan => {
+      const s = JSON.parse(localStorage.getItem('weekplan.v1') || '{}');
+      localStorage.setItem('weekplan.v1', JSON.stringify({ ...s, mealPlan: plan }));
+    }, OLD_PLAN);
+    await page.reload();
     await tab(page, 'Meals').click();
-    await page.getByRole('button', { name: 'Add your meals' }).click();
+    return errors;
+  }
 
-    for (let i = 0; i < PLAN.length; i++) {
-      if (i) await sheet(page).getByRole('button', { name: /^Add \d+\w\w meal$/ }).click();
-      await sheet(page).locator('textarea').nth(i).fill(PLAN[i]);
-    }
-    // a blank extra meal is dropped on close
-    await sheet(page).getByRole('button', { name: 'Add 5th meal' }).click();
-    await sheet(page).getByRole('button', { name: 'Done' }).click();
+  const macro = (page: Page, label: string) => page.locator('.macro').filter({ hasText: label });
+  const search = (page: Page) => sheet(page).getByRole('searchbox', { name: 'Search foods' });
 
-    const rows = page.locator('.mealplan__row');
-    await expect(rows).toHaveCount(4);
-    await expect(page.locator('.mealplan__n')).toHaveText(['1st meal', '2nd meal', '3rd meal', '4th meal']);
-    await expect(page.locator('.mealplan__food')).toHaveText(PLAN);
+  test('an old text plan becomes foods with macros', async ({ page }) => {
+    const errors = await withOldPlan(page);
+    await expect(page.locator('.planmeal')).toHaveCount(4);
+    const first = page.getByRole('article', { name: '1st meal' });
+    await expect(first.locator('.food__name')).toContainText(['Egg, boiled', 'Okra', 'White rice (cooked)']);
+    await expect(first.locator('.food__amt')).toHaveText(['5 pcs', '3 pcs', '200 g']);
+    // chicken is weighed raw, and "oakra" still finds okra
+    await expect(page.getByRole('article', { name: '4th meal' }).locator('.food__name'))
+      .toContainText(['Chicken breast (raw)', 'Okra']);
+    await expect(page.locator('.food__p').filter({ hasText: '—' })).toHaveCount(0);
+    await expect(macro(page, 'Protein').locator('.macro__of')).toHaveText('of 156g');
+    expect(errors).toEqual([]);
+  });
+
+  test('meals are ticked off and either/or foods are picked per day', async ({ page }) => {
+    await withOldPlan(page);
+    await expect(page.locator('.macros__head strong')).toHaveText('0 of 4 meals done');
+
+    await page.getByRole('button', { name: '1st meal done' }).click();
+    await expect(page.locator('.macros__head strong')).toHaveText('1 of 4 meals done');
+    await expect(macro(page, 'Protein').locator('strong')).toHaveText('38');
+
+    const second = page.getByRole('article', { name: '2nd meal' });
+    await expect(second.getByRole('button', { name: '2 pcs Okra' })).toHaveAttribute('aria-pressed', 'true');
+    await second.getByRole('button', { name: '2 pcs Banana' }).click();
+    await expect(second.getByRole('button', { name: '2 pcs Banana' })).toHaveAttribute('aria-pressed', 'true');
+    await expect(macro(page, 'Protein').locator('.macro__of')).toHaveText('of 158g');
 
     await page.reload();
     await tab(page, 'Meals').click();
-    await expect(page.locator('.mealplan__food')).toHaveText(PLAN);
+    await expect(page.getByRole('button', { name: '1st meal done' })).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.getByRole('article', { name: '2nd meal' }).getByRole('button', { name: '2 pcs Banana' }))
+      .toHaveAttribute('aria-pressed', 'true');
+  });
 
-    // remove the 2nd meal; the rest renumber
-    await page.getByRole('button', { name: 'Edit', exact: true }).click();
-    await sheet(page).getByRole('button', { name: 'Remove 2nd meal' }).click();
-    await page.keyboard.press('Escape');
-    await expect(page.locator('.mealplan__food')).toHaveText([PLAN[0], PLAN[2], PLAN[3]]);
-    await expect(page.locator('.mealplan__n')).toHaveText(['1st meal', '2nd meal', '3rd meal']);
+  test('a plan is built food by food', async ({ page }) => {
+    const errors = await openApp(page, LUNCH);
+    await tab(page, 'Meals').click();
+    await page.getByRole('button', { name: 'Build your meal plan' }).click();
+    await sheet(page).getByRole('button', { name: 'Add food to 1st meal' }).click();
+    await search(page).fill('chicken');
+    await sheet(page).getByRole('button', { name: /Chicken breast \(raw\)/ }).click();
+
+    await expect(sheet(page).locator('.sheet__title')).toHaveText('Meal plan');
+    const amount = sheet(page).getByRole('spinbutton', { name: 'Amount of Chicken breast (raw)' });
+    await amount.fill('160');
+    await amount.blur();
+
+    // an either/or
+    await sheet(page).getByRole('button', { name: 'Add food to 1st meal' }).click();
+    await search(page).fill('okra');
+    await sheet(page).getByRole('button', { name: /^Okra/ }).click();
+    await sheet(page).getByRole('button', { name: '+ or another food' }).nth(1).click();
+    await search(page).fill('banana');
+    await sheet(page).getByRole('button', { name: /^Banana/ }).click();
+    await expect(sheet(page).locator('.mealedit__or')).toHaveCount(1);
+
+    await sheet(page).getByRole('button', { name: 'Done' }).click();
+    const meal = page.getByRole('article', { name: '1st meal' });
+    await expect(meal.locator('.food__amt').first()).toHaveText('160 g');
+    await expect(meal.locator('.food__p').first()).toHaveText('36g');
+    await expect(meal.getByRole('button', { name: '1 pc Banana' })).toBeVisible();
     expect(errors).toEqual([]);
+  });
+
+  test('foods can be found in the USDA database and are kept', async ({ page }) => {
+    await page.route('https://api.nal.usda.gov/**', route => route.fulfill({
+      json: { foods: [{
+        fdcId: 2646170, dataType: 'Foundation', description: 'Salmon, Atlantic, wild, raw',
+        foodNutrients: [
+          { nutrientId: 1003, value: 19.8 }, { nutrientId: 1004, value: 6.34 },
+          { nutrientId: 1005, value: -0.2 }, { nutrientId: 2048, value: 142 },
+        ],
+      }] },
+    }));
+    await openApp(page, LUNCH);
+    await tab(page, 'Meals').click();
+    await page.getByRole('button', { name: 'Build your meal plan' }).click();
+    await sheet(page).getByRole('button', { name: 'Add food to 1st meal' }).click();
+    await search(page).fill('atlantic salmon');
+    await sheet(page).getByRole('button', { name: 'Search USDA for "atlantic salmon"' }).click();
+    const hit = sheet(page).getByRole('button', { name: /Salmon, Atlantic, wild, raw/ });
+    await expect(hit).toContainText('19.8g protein · 142 kcal / 100 g');
+    await hit.click();
+    await sheet(page).getByRole('button', { name: 'Done' }).click();
+    await expect(page.locator('.food__p').first()).toHaveText('19.8g');
+
+    // next time it is one of "your foods", no network needed
+    await page.getByRole('button', { name: 'Edit plan' }).click();
+    await sheet(page).getByRole('button', { name: 'Add food to 1st meal' }).click();
+    await search(page).fill('wild salmon');
+    await expect(sheet(page).locator('.foodlist').first().getByRole('button', { name: /Salmon, Atlantic, wild, raw/ })).toBeVisible();
+  });
+
+  test('a used-up search limit points to the key in Settings', async ({ page }) => {
+    await page.route('https://api.nal.usda.gov/**', route => route.fulfill({ status: 429, body: '' }));
+    await openApp(page, LUNCH);
+    await tab(page, 'Meals').click();
+    await page.getByRole('button', { name: 'Build your meal plan' }).click();
+    await sheet(page).getByRole('button', { name: 'Add food to 1st meal' }).click();
+    await search(page).fill('quinoa');
+    await search(page).press('Enter');
+    await expect(sheet(page).locator('.foodlist__note--error')).toContainText('key in Settings');
   });
 });

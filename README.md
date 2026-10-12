@@ -80,7 +80,7 @@ kept in IndexedDB on the device. They are not part of the JSON backup. If the
 browser blocks the live camera, the app falls back to the phone's own camera and
 turns down any photo that wasn't taken in the last two minutes.
 
-The **Meal plan** card on the same tab lists the meals of your day in order (1st meal, 2nd meal, …). Tap *Edit* to type each meal, add one or remove one. The plan repeats every day and is part of the JSON backup.
+**Today's meals** (same tab) is the daily meal plan. Each meal holds foods with an amount in grams or pieces. Protein, carbs, fat and calories are worked out per food, per meal and for the day. Tick a meal when it is eaten; the totals show eaten vs planned. A food can have "or" alternatives (e.g. 2 okra or 2 bananas), and you pick one each day. Foods come from a built-in table (offline), from USDA FoodData Central (`js/nutrition.js`; add a free api.data.gov key in Settings, otherwise the shared DEMO_KEY allows only a few searches an hour), or from values you type in. Looked-up foods are saved on the device. Raw and cooked weights differ a lot, so the built-in foods say which one they are.
 
 Settings holds the rest-timer and chime toggles, plus JSON export/import and a
 full reset.

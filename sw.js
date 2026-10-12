@@ -8,7 +8,7 @@
              kept, so days you actually train work offline.
    ═══════════════════════════════════════════════════════════ */
 
-const VERSION = 'v7';
+const VERSION = 'v8';
 const SHELL = `bals-planner-shell-${VERSION}`;
 const ART   = `bals-planner-art-${VERSION}`;
 const ART_LIMIT = 700;            // ≈230 exercises' worth of frames
@@ -29,6 +29,7 @@ const SHELL_ASSETS = [
   'js/store.js',
   'js/ui.js',
   'js/meals.js',
+  'js/nutrition.js',
   'js/app.js',
   'data/exercises.json',
   'data/taxonomy.json',
