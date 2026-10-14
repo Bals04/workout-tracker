@@ -1066,16 +1066,24 @@
       UI.rerenderSheet(build);
     };
 
-    async function lookUp() {
-      const q = stripAmount(query).trim();
-      if (!q) return;
+    let searchedFor = '';          // what was actually sent, after spelling correction
+    let lookUpRun = 0;
+    /** `exact` skips the spelling correction — for when it guessed wrong. */
+    async function lookUp(exact = false) {
+      const typed = stripAmount(query).trim();
+      if (!typed) return;
+      const run = ++lookUpRun;
+      searchedFor = (exact !== true && Nutrition.correct(typed)) || typed;
       remote = 'loading';
       paintRemote();
+      let result;
       try {
-        remote = await Nutrition.usdaSearch(q, Store.settings.usdaKey);
+        result = await Nutrition.usdaSearch(searchedFor, Store.settings.usdaKey);
       } catch (err) {
-        remote = err;
+        result = err;
       }
+      if (run !== lookUpRun) return;     // a newer search has started
+      remote = result;
       paintRemote();
     }
 
@@ -1223,6 +1231,12 @@
         } else if (!remote.length) {
           online.append(el('p', { class: 'foodlist__note', text: 'No matches. Try a simpler word, or enter the values manually.' }));
         } else {
+          if (searchedFor.toLowerCase() !== q.toLowerCase()) {
+            online.append(el('p', { class: 'foodlist__note' }, [
+              `Showing results for "${searchedFor}". `,
+              el('button', { class: 'linkbtn', type: 'button', style: 'padding:0', onclick: () => lookUp(true) }, `Search for "${q}" instead`)
+            ]));
+          }
           for (const r of remote) {
             online.append(el('button', { class: 'foodpick', type: 'button', onclick: () => {
               const id = Store.saveFood({ id: `usda-${r.fdcId}`, name: r.name, per100: r.per100, source: 'usda', fdcId: r.fdcId });
@@ -1234,8 +1248,18 @@
           }
         }
       };
-      input.addEventListener('input', () => { query = input.value; remote = null; paintRemote(); });
-      input.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); lookUp(); } });
+      // with your own key, results follow your typing; the shared demo key
+      // allows only a few searches an hour, so it waits for a tap
+      let typingTimer = null;
+      input.addEventListener('input', () => {
+        query = input.value;
+        remote = null;
+        lookUpRun++;
+        paintRemote();
+        clearTimeout(typingTimer);
+        if (Store.settings.usdaKey && stripAmount(query).trim().length >= 3) typingTimer = setTimeout(lookUp, 600);
+      });
+      input.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); clearTimeout(typingTimer); lookUp(); } });
       body.append(online);
       if (!Store.settings.usdaKey) {
         body.append(el('p', { class: 'foodlist__hint', text: 'Using the shared demo key, which allows only a few searches an hour. Add your own free key in Settings.' }));

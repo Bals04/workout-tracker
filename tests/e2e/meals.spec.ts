@@ -408,6 +408,59 @@ test.describe('Meal plan', () => {
     await expect(sheet(page).locator('.portion__name')).toHaveText('Protein bar');
   });
 
+  test('typos still find the food', async ({ page }) => {
+    await withEmptyPlan(page);
+    await page.getByRole('button', { name: 'Build your meal plan' }).click();
+    for (const typo of ['chike', 'chiken', 'chikcen brest']) {
+      await search(page).fill(typo);
+      await expect(sheet(page).locator('.foodpick').first(), typo).toContainText('Chicken breast');
+    }
+    await search(page).fill('banan');
+    await expect(sheet(page).locator('.foodpick').first()).toContainText('Banana');
+  });
+
+  test('a USDA search fixes spelling, and sends the food types the API accepts', async ({ page }) => {
+    const urls: string[] = [];
+    await page.route('https://api.nal.usda.gov/**', route => {
+      urls.push(route.request().url());
+      route.fulfill({ json: { foods: [{ fdcId: 1, dataType: 'Foundation', description: 'Chicken, breast, raw',
+        foodNutrients: [{ nutrientId: 1003, value: 22.5 }, { nutrientId: 1008, value: 120 }] }] } });
+    });
+    await withEmptyPlan(page);
+    await page.getByRole('button', { name: 'Build your meal plan' }).click();
+    await sheet(page).getByRole('tab', { name: 'USDA database' }).click();
+    await search(page).fill('chike brest');
+    await search(page).press('Enter');
+    await expect(sheet(page).locator('.foodlist')).toContainText('Showing results for "chicken breast".');
+    const url = new URL(urls[0]);
+    expect(url.searchParams.get('query')).toBe('chicken breast');
+    // plain commas: the API answers 400 to %2C
+    expect(urls[0]).toContain('dataType=Foundation,SR%20Legacy,Survey%20(FNDDS)');
+  });
+
+  test('with your own key, USDA results come as you type', async ({ page }) => {
+    let calls = 0;
+    await page.route('https://api.nal.usda.gov/**', route => {
+      calls++;
+      route.fulfill({ json: { foods: [{ fdcId: 2, dataType: 'SR Legacy', description: 'Salmon, raw',
+        foodNutrients: [{ nutrientId: 1003, value: 20 }, { nutrientId: 1008, value: 208 }] }] } });
+    });
+    await withEmptyPlan(page);
+    await page.evaluate(() => {
+      const s = JSON.parse(localStorage.getItem('weekplan.v1') || '{}');
+      s.settings = { ...s.settings, usdaKey: 'test-key' };
+      localStorage.setItem('weekplan.v1', JSON.stringify(s));
+    });
+    await page.reload();
+    await tab(page, 'Meals').click();
+    await page.getByRole('button', { name: 'Build your meal plan' }).click();
+    await sheet(page).getByRole('tab', { name: 'USDA database' }).click();
+    await search(page).pressSequentially('salmon', { delay: 30 });
+    await expect(sheet(page).getByRole('button', { name: /Salmon, raw/ })).toBeVisible();
+    expect(calls).toBe(1);      // one search after typing settles, not one per letter
+    await expect(sheet(page).locator('.foodlist__hint')).toHaveCount(0);
+  });
+
   test('a used-up search limit points to the key in Settings', async ({ page }) => {
     await page.route('https://api.nal.usda.gov/**', route => route.fulfill({ status: 429, body: '' }));
     await withEmptyPlan(page);

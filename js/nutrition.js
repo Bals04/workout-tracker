@@ -65,15 +65,96 @@ const Nutrition = (() => {
     return best;
   }
 
-  /** Local search over built-in and saved foods. */
+  /* ── typo-tolerant search ─────────────────────────────────
+     "chike", "chiken" and "chikcen" all find chicken: each typed
+     word may be a few edits away from the start of a food word. */
+
+  /** Edit distance, counting a swap of two neighbours as one edit. */
+  function distance(a, b) {
+    const d = Array.from({ length: a.length + 1 }, (_, i) => [i, ...Array(b.length).fill(0)]);
+    for (let j = 1; j <= b.length; j++) d[0][j] = j;
+    for (let i = 1; i <= a.length; i++) {
+      for (let j = 1; j <= b.length; j++) {
+        const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+        d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + cost);
+        if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) d[i][j] = Math.min(d[i][j], d[i - 2][j - 2] + 1);
+      }
+    }
+    return d[a.length][b.length];
+  }
+
+  /** Edits allowed for a typed word: none for short words, more for long ones. */
+  const tolerance = w => w.length <= 3 ? 0 : w.length <= 5 ? 1 : 2;
+
+  /** How well a typed word matches a food word: 0 = no match, higher is better. */
+  function wordScore(w, t) {
+    if (t === w) return 4;
+    if (t.startsWith(w)) return 3;
+    if (t.includes(w)) return 2;
+    const tol = tolerance(w);
+    if (!tol) return 0;
+    // compare against the start of the food word, a little shorter or longer than what was typed
+    for (let len = Math.max(1, w.length - 1); len <= Math.min(t.length, w.length + 1); len++) {
+      if (distance(w, t.slice(0, len)) <= tol) return 1;
+    }
+    return distance(w, t) <= tol ? 1 : 0;
+  }
+
+  const wordsOf = food => norm([food.name, ...(food.aliases || [])].join(' ')).split(' ');
+
+  /** Local search over built-in and saved foods, best matches first. */
   function search(q) {
-    const n = norm(q);
-    if (!n) return all();
-    const words = n.split(' ');
-    return all().filter(food => {
-      const hay = norm([food.name, ...(food.aliases || [])].join(' '));
-      return words.every(w => hay.includes(w));
+    const words = norm(q).split(' ').filter(Boolean);
+    if (!words.length) return all();
+    return all()
+      .map(food => {
+        const hay = wordsOf(food);
+        let score = 0;
+        for (const w of words) {
+          const best = Math.max(...hay.map(t => wordScore(w, t)));
+          if (!best) return null;      // every typed word has to match something
+          score += best;
+        }
+        return { food, score };
+      })
+      .filter(Boolean)
+      .sort((a, b) => b.score - a.score)
+      .map(r => r.food);
+  }
+
+  /* Words for spelling correction before an online search: the food
+     table plus common food words that are not in it. */
+  const COMMON = ('chicken beef pork turkey lamb salmon tuna shrimp cod tilapia sardines egg eggs rice oats oatmeal bread pasta '
+    + 'noodles potato potatoes banana apple orange mango pineapple grapes strawberries blueberries watermelon papaya broccoli '
+    + 'spinach carrot carrots tomato cucumber lettuce cabbage onion garlic okra eggplant avocado milk yogurt cheese butter '
+    + 'peanut peanuts almonds cashews walnuts tofu beans lentils chickpeas quinoa corn sweet breast thigh drumstick wing fillet '
+    + 'steak ground boiled fried grilled baked steamed roasted raw cooked white brown whole skinless boneless protein whey '
+    + 'chop chops chocolate honey sugar oil olive coconut cereal granola tortilla bagel sausage bacon ham').split(' ');
+
+  /** "chike breast" → "chicken breast"; null when nothing needed fixing. */
+  function correct(q) {
+    const vocab = new Set([...COMMON, ...all().flatMap(wordsOf)]);
+    const words = norm(q).split(' ').filter(Boolean);
+    let changed = false;
+    const fixed = words.map(w => {
+      if (vocab.has(w) || !tolerance(w)) return w;
+      // a typed word may be a misspelt start of a longer word ("chike" → "chicken");
+      // whole-word matches rank a little ahead of start-of-word ones
+      let best = null, bestRank = Infinity;
+      for (const v of vocab) {
+        const whole = distance(w, v);
+        let start = Infinity;
+        // only for longer words: a short one like "chop" is too easily the start of something else
+        if (w.length >= 5) for (const len of [w.length, w.length + 1]) if (v.length > len) start = Math.min(start, distance(w, v.slice(0, len)));
+        const d = Math.min(whole, start);
+        if (d > tolerance(w)) continue;
+        const rank = d + (whole > d ? .25 : 0);
+        if (rank < bestRank || (rank === bestRank && v.length < best.length)) { best = v; bestRank = rank; }
+      }
+      if (best) { changed = true; return best; }
+      return w;
     });
+    return changed ? fixed.join(' ') : null;
   }
 
   /**
@@ -119,6 +200,7 @@ const Nutrition = (() => {
 
   /* ── USDA FoodData Central ───────────────────────────────── */
   const FDC = 'https://api.nal.usda.gov/fdc/v1/foods/search';
+  const DATA_TYPES = ['Foundation', 'SR Legacy', 'Survey (FNDDS)'];
   const NUTRIENT = { p: 1003, f: 1004, c: 1005 };
   const ENERGY = [1008, 2048, 2047];     // kcal; Foundation foods only carry the Atwater ones
 
@@ -128,15 +210,23 @@ const Nutrition = (() => {
 
   /** Search USDA. Resolves to [{ fdcId, name, kind, per100 }]. */
   async function usdaSearch(query, key) {
-    const params = new URLSearchParams({
-      api_key: key || 'DEMO_KEY', query, pageSize: '25',
-      dataType: 'Foundation,SR Legacy,Survey (FNDDS)'
-    });
+    // Built by hand: the API answers 400 when the commas in dataType are
+    // percent-encoded, which URLSearchParams always does.
+    const enc = encodeURIComponent;
+    const url = `${FDC}?api_key=${enc(key || 'DEMO_KEY')}&query=${enc(query)}&pageSize=25`
+      + `&dataType=${DATA_TYPES.map(enc).join(',')}`;
+
+    // one quiet retry: the service sometimes fails a first, cold request
     let res;
-    try {
-      res = await fetch(`${FDC}?${params}`);
-    } catch {
-      throw new LookupError('You appear to be offline.', 'offline');
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        res = await fetch(url);
+      } catch {
+        if (attempt) throw new LookupError('You appear to be offline.', 'offline');
+        res = null;
+      }
+      if (res && res.status < 500) break;
+      if (!attempt) await new Promise(r => setTimeout(r, 700));
     }
     if (res.status === 429) throw new LookupError('Search limit reached for now.', 'limit');
     if (res.status === 401 || res.status === 403) throw new LookupError('The food database key was not accepted.', 'key');
@@ -156,5 +246,5 @@ const Nutrition = (() => {
     });
   }
 
-  return { BUILTIN, get, all, match, search, parseLine, macros, sum, amountLabel, usdaSearch, ZERO };
+  return { BUILTIN, get, all, match, search, correct, parseLine, macros, sum, amountLabel, usdaSearch, ZERO };
 })();
