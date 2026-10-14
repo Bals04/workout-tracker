@@ -1047,7 +1047,7 @@
   function openFoodPicker({ title, action = 'Add', onPick, back, initial = '', single = false, skipAmount = false }) {
     let query = initial;
     let remote = null;            // null | 'loading' | Error | [results]
-    let manual = false;
+    let source = 'mine';          // where foods come from: 'mine' | 'usda' | 'manual'
     let chosen = null;            // the portion being sized, once a food is picked
     let paintRemote = () => {};
 
@@ -1055,7 +1055,7 @@
       onPick(options);
       if (!again) { UI.closeSheet(); return; }
       UI.toast(`Added ${options.map(o => o.name).join(' or ')}`);
-      chosen = null; query = ''; remote = null; manual = false;
+      chosen = null; query = ''; remote = null;
       UI.rerenderSheet(build);
       document.querySelector('#sheet-body input[type="search"]')?.focus();
     };
@@ -1128,49 +1128,91 @@
       paint();
     };
 
-    /* Step 1: which food */
+    /* Step 1: which food — from one source at a time */
+    const SOURCES = [['mine', 'Your foods'], ['usda', 'USDA database'], ['manual', 'Enter manually']];
+    const useSource = key => {
+      source = key;
+      UI.rerenderSheet(build);
+      document.querySelector('#sheet-body input[type="search"]')?.focus();
+    };
+
     const buildSearch = body => {
+      body.append(el('div', { class: 'sourcetabs', role: 'tablist', 'aria-label': 'Where to find the food' },
+        SOURCES.map(([key, label]) => el('button', {
+          class: 'sourcetab', type: 'button', role: 'tab', 'aria-selected': String(source === key),
+          onclick: () => { if (source !== key) useSource(key); }
+        }, label))));
+
+      if (source === 'manual') {
+        body.append(el('p', { class: 'foodlist__note', style: 'margin:14px 0 12px',
+          text: 'Copy the values from the package label, per 100 g.' }), manualFoodForm(choose, stripAmount(query)));
+        return;
+      }
+
       const input = el('input', { class: 'input', type: 'search', value: query, autocomplete: 'off', enterkeyhint: 'search',
-        placeholder: 'Search, or type "160g chicken breast"', 'aria-label': 'Search foods' });
-      const quick = el('div');
-      const local = el('div', { class: 'foodlist' });
-      const online = el('div', { class: 'foodlist', 'aria-live': 'polite' });
-      let quickPick = null;
+        placeholder: source === 'mine' ? 'Search, or type "160g chicken breast"' : 'Search USDA, e.g. salmon fillet',
+        'aria-label': 'Search foods' });
+      body.append(el('div', { class: 'searchwrap sourcetabs__search' }, [svg(ICON.search, { width: 2 }), input]));
 
-      /* "160g chicken breast" / "2 okra/banana" → a ready-made portion */
-      const paintQuick = () => {
-        clear(quick);
-        quickPick = null;
-        if (!/^\s*\d/.test(query)) return;
-        const opts = Nutrition.parseLine(query).filter(o => o.food);
-        const use = single ? opts.slice(0, 1) : opts;
-        if (!use.length) return;
-        quickPick = use;
-        const m = Nutrition.macros(use[0]);
-        quick.append(el('button', { class: 'foodpick foodpick--quick', type: 'button', onclick: () => finish(use) }, [
-          el('span', { class: 'foodpick__name', text: `Add ${use.map(o => `${Nutrition.amountLabel(o)} ${o.name}`).join(' or ')}` }),
-          el('span', { class: 'foodpick__meta num', text: m ? macroLine(m) : '' })
-        ]));
-      };
+      if (source === 'mine') {
+        const quick = el('div');
+        const local = el('div', { class: 'foodlist', style: 'margin-top:12px' });
+        let quickPick = null;
 
-      const paintLocal = () => {
-        clear(local);
-        const found = Nutrition.search(stripAmount(query)).slice(0, 40);
-        for (const f of found) {
-          local.append(el('button', { class: 'foodpick', type: 'button', onclick: () => choose(f) }, [
-            el('span', { class: 'foodpick__name', text: f.name }),
-            el('span', { class: 'foodpick__meta num', text: `${r1(f.per100.p)}g protein · ${r0(f.per100.kcal)} kcal / 100 g` })
+        /* "160g chicken breast" / "2 okra/banana" → a ready-made portion */
+        const paintQuick = () => {
+          clear(quick);
+          quickPick = null;
+          if (!/^\s*\d/.test(query)) return;
+          const opts = Nutrition.parseLine(query).filter(o => o.food);
+          const use = single ? opts.slice(0, 1) : opts;
+          if (!use.length) return;
+          quickPick = use;
+          const m = Nutrition.macros(use[0]);
+          quick.append(el('button', { class: 'foodpick foodpick--quick', type: 'button', onclick: () => finish(use) }, [
+            el('span', { class: 'foodpick__name', text: `Add ${use.map(o => `${Nutrition.amountLabel(o)} ${o.name}`).join(' or ')}` }),
+            el('span', { class: 'foodpick__meta num', text: m ? macroLine(m) : '' })
           ]));
-        }
-        if (!found.length) local.append(el('p', { class: 'foodlist__note', text: 'Not in your foods yet — search the USDA database below.' }));
-      };
+        };
 
+        const paintLocal = () => {
+          clear(local);
+          const q = stripAmount(query).trim();
+          const found = Nutrition.search(q).slice(0, 40);
+          for (const f of found) {
+            local.append(el('button', { class: 'foodpick', type: 'button', onclick: () => choose(f) }, [
+              el('span', { class: 'foodpick__name', text: f.name }),
+              el('span', { class: 'foodpick__meta num', text: `${r1(f.per100.p)}g protein · ${r0(f.per100.kcal)} kcal / 100 g` })
+            ]));
+          }
+          if (!found.length) {
+            local.append(el('p', { class: 'foodlist__note', text: 'Not in your foods yet.' }),
+              el('button', { class: 'btn btn--block', type: 'button', onclick: () => { useSource('usda'); lookUp(); } },
+                [svg(ICON.search, { width: 2 }), `Search USDA for "${q}"`]));
+          }
+        };
+
+        input.addEventListener('input', () => { query = input.value; paintQuick(); paintLocal(); });
+        input.addEventListener('keydown', e => {
+          if (e.key !== 'Enter') return;
+          e.preventDefault();
+          if (quickPick) finish(quickPick);
+          else if (!Nutrition.search(stripAmount(query).trim()).length && stripAmount(query).trim()) { useSource('usda'); lookUp(); }
+        });
+        body.append(quick, local);
+        paintQuick();
+        paintLocal();
+        return;
+      }
+
+      /* USDA */
+      const online = el('div', { class: 'foodlist', style: 'margin-top:12px', 'aria-live': 'polite' });
       paintRemote = () => {
         clear(online);
         const q = stripAmount(query).trim();
         if (remote === null) {
           online.append(el('button', { class: 'btn btn--block', type: 'button', disabled: !q, onclick: lookUp },
-            [svg(ICON.search, { width: 2 }), q ? `Search USDA for "${q}"` : 'Type a food to search USDA']));
+            [svg(ICON.search, { width: 2 }), q ? `Search USDA for "${q}"` : 'Type a food to search']));
         } else if (remote === 'loading') {
           online.append(el('p', { class: 'foodlist__note', text: 'Searching the USDA food database…' }));
         } else if (remote instanceof Error) {
@@ -1179,7 +1221,7 @@
             : remote.message }));
           online.append(el('button', { class: 'btn btn--block', type: 'button', onclick: lookUp }, 'Try again'));
         } else if (!remote.length) {
-          online.append(el('p', { class: 'foodlist__note', text: 'No matches. Try a simpler word, or enter the values yourself.' }));
+          online.append(el('p', { class: 'foodlist__note', text: 'No matches. Try a simpler word, or enter the values manually.' }));
         } else {
           for (const r of remote) {
             online.append(el('button', { class: 'foodpick', type: 'button', onclick: () => {
@@ -1192,25 +1234,12 @@
           }
         }
       };
-
-      input.addEventListener('input', () => { query = input.value; remote = null; paintQuick(); paintLocal(); paintRemote(); });
-      input.addEventListener('keydown', e => {
-        if (e.key !== 'Enter') return;
-        e.preventDefault();
-        if (quickPick) finish(quickPick); else lookUp();
-      });
-
-      body.append(
-        el('div', { class: 'searchwrap' }, [svg(ICON.search, { width: 2 }), input]),
-        quick,
-        el('div', { class: 'eyebrow foodlist__title', text: 'Your foods' }), local,
-        el('div', { class: 'eyebrow foodlist__title', text: 'USDA food database' }), online,
-        el('div', { class: 'eyebrow foodlist__title', text: 'Not listed?' }),
-        manual ? manualFoodForm(choose, stripAmount(query)) : el('button', { class: 'btn btn--block btn--ghost', type: 'button',
-          onclick: () => { manual = true; UI.rerenderSheet(build); } }, 'Enter nutrition yourself')
-      );
-      paintQuick();
-      paintLocal();
+      input.addEventListener('input', () => { query = input.value; remote = null; paintRemote(); });
+      input.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); lookUp(); } });
+      body.append(online);
+      if (!Store.settings.usdaKey) {
+        body.append(el('p', { class: 'foodlist__hint', text: 'Using the shared demo key, which allows only a few searches an hour. Add your own free key in Settings.' }));
+      }
       paintRemote();
     };
 

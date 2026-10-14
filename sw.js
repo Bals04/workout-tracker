@@ -8,7 +8,7 @@
              kept, so days you actually train work offline.
    ═══════════════════════════════════════════════════════════ */
 
-const VERSION = 'v11';
+const VERSION = 'v12';
 const SHELL = `bals-planner-shell-${VERSION}`;
 const ART   = `bals-planner-art-${VERSION}`;
 const ART_LIMIT = 700;            // ≈230 exercises' worth of frames

@@ -367,6 +367,7 @@ test.describe('Meal plan', () => {
     }));
     await withEmptyPlan(page);
     await page.getByRole('button', { name: 'Build your meal plan' }).click();
+    await sheet(page).getByRole('tab', { name: 'USDA database' }).click();
     await search(page).fill('atlantic salmon');
     await sheet(page).getByRole('button', { name: 'Search USDA for "atlantic salmon"' }).click();
     const hit = sheet(page).getByRole('button', { name: /Salmon, Atlantic, wild, raw/ });
@@ -379,8 +380,32 @@ test.describe('Meal plan', () => {
     // next time it is one of "your foods", no network needed
     await page.getByRole('button', { name: 'Edit plan' }).click();
     await sheet(page).getByRole('button', { name: 'Add food to 1st meal' }).click();
+    await sheet(page).getByRole('tab', { name: 'Your foods' }).click();
     await search(page).fill('wild salmon');
     await expect(sheet(page).locator('.foodlist').first().getByRole('button', { name: /Salmon, Atlantic, wild, raw/ })).toBeVisible();
+  });
+
+  test('foods come from one chosen source at a time', async ({ page }) => {
+    await withEmptyPlan(page);
+    await page.getByRole('button', { name: 'Build your meal plan' }).click();
+    const tabs = sheet(page).getByRole('tablist', { name: 'Where to find the food' });
+    await expect(tabs.getByRole('tab')).toHaveText(['Your foods', 'USDA database', 'Enter manually']);
+    await expect(tabs.getByRole('tab', { name: 'Your foods' })).toHaveAttribute('aria-selected', 'true');
+    await expect(sheet(page).locator('.foodpick').first()).toContainText('Egg, boiled');
+
+    await tabs.getByRole('tab', { name: 'USDA database' }).click();
+    await expect(sheet(page).locator('.foodpick')).toHaveCount(0);
+    await expect(sheet(page).getByRole('button', { name: 'Type a food to search' })).toBeDisabled();
+
+    await tabs.getByRole('tab', { name: 'Enter manually' }).click();
+    await expect(search(page)).toHaveCount(0);
+    await sheet(page).getByLabel('Food name').fill('Protein bar');
+    await sheet(page).getByLabel('Protein (g / 100 g)').fill('33');
+    await sheet(page).getByLabel('Carbs (g / 100 g)').fill('40');
+    await sheet(page).getByLabel('Fat (g / 100 g)').fill('12');
+    await sheet(page).getByRole('button', { name: 'Save food' }).click();
+    // straight on to the amount
+    await expect(sheet(page).locator('.portion__name')).toHaveText('Protein bar');
   });
 
   test('a used-up search limit points to the key in Settings', async ({ page }) => {

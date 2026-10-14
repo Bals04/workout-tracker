@@ -775,6 +775,16 @@ select.optedit__unit { width: auto; padding: 9px 30px 9px 10px; font-size: .82re
 
 /* Food picker */
 .foodlist__title { margin: 18px 0 8px; }
+.sourcetabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 3px; padding: 3px; border-radius: var(--r-md); background: var(--surface-2); border: 1px solid var(--line); }
+.sourcetab {
+  appearance: none; border: 0; cursor: pointer; padding: 9px 6px; border-radius: calc(var(--r-md) - 3px);
+  background: transparent; color: var(--text-dim); font: inherit; font-size: .8rem; font-weight: 700; line-height: 1.2;
+  transition: background .16s var(--ease), color .16s var(--ease);
+}
+.sourcetab:hover { color: var(--text); }
+.sourcetab[aria-selected="true"] { background: var(--accent); color: var(--accent-ink); }
+.sourcetabs__search { margin-top: 12px; }
+.foodlist__hint { margin-top: 12px; font-size: .74rem; line-height: 1.5; color: var(--text-mute); }
 .foodlist { display: grid; gap: 6px; }
 .foodlist__note { font-size: .82rem; color: var(--text-dim); line-height: 1.5; }
 .foodlist__note--error { color: var(--danger); }
