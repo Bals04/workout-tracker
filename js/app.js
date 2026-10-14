@@ -729,10 +729,13 @@
         const url = URL.createObjectURL(m.blob);
         mealUrls.push(url);
         const time = Meals.timeOf(new Date(m.ts));
-        grid.append(el('button', { class: 'mealcard', type: 'button', 'aria-label': `Meal at ${time}`,
+        grid.append(el('button', { class: 'mealcard', type: 'button', 'aria-label': `${m.plan?.title || 'Meal'} at ${time}`,
           onclick: () => openMeal(m) }, [
           el('img', { src: url, alt: '', loading: 'lazy', decoding: 'async' }),
-          el('span', { class: 'mealcard__meta' }, [el('strong', { class: 'num', text: time })])
+          el('span', { class: 'mealcard__meta' }, [
+            el('strong', { text: m.plan?.title || 'Meal' }),
+            el('span', { class: 'num', text: time })
+          ])
         ]));
       }
       root.append(grid);
@@ -1303,17 +1306,34 @@
   }
 
   async function snapMeal() {
-    const meal = await Meals.capture();
+    // offer today's planned meals, suggesting the first one not yet eaten
+    const today = Store.iso();
+    const day = Store.mealDay(today);
+    const plan = Store.getMealPlan();
+    const choices = plan.map((meal, i) => ({
+      id: meal.id,
+      title: `${ordinal(i + 1)} meal`,
+      macros: mealMacros(meal, day),
+      foods: meal.items.map(item => { const o = item.options[pickOf(day, item)]; return `${Nutrition.amountLabel(o)} ${o.name}`; })
+    }));
+    const meal = await Meals.capture({ choices, preselect: plan.find(m => !day.done[m.id])?.id });
+    // a photo of planned meals ticks them off
+    for (const id of meal?.plan?.mealIds || []) if (!Store.mealDay(today).done[id]) Store.toggleMealDone(today, id);
     renderAll();
     if (meal) openMeal(meal, { fresh: true });
   }
 
   function openMeal(meal, { fresh = false } = {}) {
     const url = URL.createObjectURL(meal.blob);
-    UI.openSheet(fresh ? 'Meal saved' : 'Meal', body => {
+    const title = meal.plan?.title || 'Meal';
+    UI.openSheet(fresh ? `${title} saved` : title, body => {
       body.append(
-        el('img', { class: 'mealview', src: url, alt: `Meal photo, stamped ${Meals.stampText(meal.ts)}` }),
+        el('img', { class: 'mealview', src: url, alt: `${title} photo, stamped ${Meals.stampText(meal.ts)}` }),
         el('p', { class: 'mealview__stamp num', text: Meals.stampText(meal.ts) }),
+        meal.plan ? el('p', { class: 'mealview__macros num' }, [
+          ...MACROS.map(({ key, label }) => el('span', {}, [mdot(key), `${r0(meal.plan.macros[key])}g ${label.toLowerCase()}`])),
+          el('span', { text: `${r0(meal.plan.macros.kcal)} kcal` })
+        ]) : null,
         el('div', { class: 'stack', style: 'margin-top:14px' }, [
           el('button', { class: 'btn btn--primary btn--block btn--lg', type: 'button',
             onclick: () => Meals.share([meal]) }, [svg(Meals.ICON_SHARE, { width: 2 }), 'Send to coach']),

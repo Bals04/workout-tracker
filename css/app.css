@@ -813,6 +813,7 @@ select.optedit__unit { width: auto; padding: 9px 30px 9px 10px; font-size: .82re
 .mealcard__meta strong { font-weight: 750; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mealcard__meta span { font-weight: 650; color: var(--text-dim); flex: none; }
 .mealview { display: block; width: 100%; max-height: 62dvh; object-fit: contain; border-radius: var(--r-lg); background: #000; }
+.mealview__macros { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 12px; margin-top: 6px; font-size: .8rem; font-weight: 650; color: var(--text-dim); }
 .mealview__stamp { margin-top: 10px; font-size: .8rem; color: var(--text-dim); text-align: center; line-height: 1.5; }
 
 /* Full-screen viewfinder — always dark, whatever the theme */
@@ -830,6 +831,12 @@ select.optedit__unit { width: auto; padding: 9px 30px 9px 10px; font-size: .82re
 }
 .cam__status { position: absolute; inset: auto 24px 50%; text-align: center; font-size: .9rem; line-height: 1.55; color: rgb(255 255 255 / .82); }
 .cam__bar { padding: 14px 16px 18px; display: grid; gap: 16px; }
+.cam__mealpick { display: grid; gap: 8px; justify-items: center; }
+.cam__meals { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 6px; }
+.cam__ask { width: 100%; text-align: center; font-size: .78rem; font-weight: 700; color: rgb(255 255 255 / .8); margin-bottom: 2px; }
+.cam__meals .chip { background: rgb(255 255 255 / .1); border-color: rgb(255 255 255 / .18); color: rgb(255 255 255 / .85); }
+.cam__meals .chip[aria-pressed="true"] { background: #408c74; border-color: transparent; color: #fff; }
+.cam__mealinfo { font-size: .74rem; color: rgb(255 255 255 / .7); text-align: center; }
 .cam__controls { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; }
 .cam__close {
   appearance: none; cursor: pointer; justify-self: start;

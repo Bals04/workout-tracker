@@ -57,8 +57,19 @@ const Meals = (() => {
   badge.src = 'mascot/meal-plan.png';
   const badgeReady = badge.decode().then(() => true, () => false);
 
-  /** Draw `source` scaled down, burn the date and time in, return a JPEG. */
-  async function stamp(source, sw, sh, when) {
+  /* The macro colours from the app's dark theme — the band under them is always dark. */
+  const MACRO_INK = { p: '#3987e5', c: '#d95926', f: '#199e70' };
+  const r0 = n => Math.round(n);
+
+  /** "39g protein · 30g carbs · 5g fat · 330 kcal" */
+  const macroText = mac => `${r0(mac.p)}g protein · ${r0(mac.c)}g carbs · ${r0(mac.f)}g fat · ${r0(mac.kcal)} kcal`;
+
+  /**
+   * Draw `source` scaled down, burn the date and time in, return a JPEG.
+   * With `tag` (a planned meal: title, macros, foods) the meal and its
+   * macros are burned in too.
+   */
+  async function stamp(source, sw, sh, when, tag = null) {
     const k = Math.min(1, MAX_EDGE / Math.max(sw, sh));
     const w = Math.round(sw * k), h = Math.round(sh * k);
     const c = document.createElement('canvas');
@@ -70,11 +81,11 @@ const Meals = (() => {
     const pad = 5 * u;
     const font = (weight, size) => `${weight} ${size}px Montserrat, system-ui, sans-serif`;
 
-    // dark band so the text reads on any plate
-    const band = 34 * u;
+    // dark band so the text reads on any plate; taller when the macros go in
+    const band = (tag ? 40 : 34) * u;
     const grad = g.createLinearGradient(0, h - band, 0, h);
     grad.addColorStop(0, 'rgba(0,0,0,0)');
-    grad.addColorStop(1, 'rgba(0,0,0,.78)');
+    grad.addColorStop(1, 'rgba(0,0,0,.82)');
     g.fillStyle = grad;
     g.fillRect(0, h - band, w, band);
 
@@ -91,11 +102,36 @@ const Meals = (() => {
     g.fillStyle = 'rgba(255,255,255,.9)';
     g.fillText(dateOf(when), pad, h - 4.6 * u);
 
+    if (tag) {
+      // one small line of macros above the time, a coloured dot for each —
+      // scaled down further if it would run past the edge
+      const max = w - pad * 2;
+      const parts = [['p', `${r0(tag.macros.p)}g protein`], ['c', `${r0(tag.macros.c)}g carbs`], ['f', `${r0(tag.macros.f)}g fat`], [null, `${r0(tag.macros.kcal)} kcal`]];
+      const rowWidth = sz => { g.font = font(650, sz); return parts.reduce((t, [k, text]) => t + (k ? sz * .9 : 0) + g.measureText(text).width, 0) + sz * .9 * (parts.length - 1); };
+      let size = 3.1 * u;
+      if (rowWidth(size) > max) size *= max / rowWidth(size);
+      g.font = font(650, size);
+      const y = h - 22.5 * u;
+      let x = pad;
+      for (const [k, text] of parts) {
+        if (k) {
+          g.fillStyle = MACRO_INK[k];
+          g.beginPath();
+          g.arc(x + size * .28, y - size * .36, size * .28, 0, Math.PI * 2);
+          g.fill();
+          x += size * .9;
+        }
+        g.fillStyle = 'rgba(255,255,255,.88)';
+        g.fillText(text, x, y);
+        x += g.measureText(text).width + size * .9;
+      }
+    }
+
     // "Meal snapshot" as a green pill, so it reads on any background
-    const tag = 'Meal snapshot', size = 3.4 * u, px = 2.6 * u, py = 1.5 * u;
+    const label = tag ? `Meal snapshot · ${tag.title}` : 'Meal snapshot', size = 3.4 * u, px = 2.6 * u, py = 1.5 * u;
     g.font = font(750, size);
     g.textBaseline = 'middle';
-    const tw = g.measureText(tag).width, th = size + py * 2, tx = pad, ty = pad * .7;
+    const tw = g.measureText(label).width, th = size + py * 2, tx = pad, ty = pad * .7;
     g.shadowColor = 'rgba(0,0,0,.35)';
     g.shadowBlur = 1.5 * u;
     g.fillStyle = '#408C74';   // the app's accent green
@@ -105,7 +141,7 @@ const Meals = (() => {
     g.fill();
     g.shadowColor = 'transparent';
     g.fillStyle = '#FFFFFF';
-    g.fillText(tag, tx + px, ty + th / 2);
+    g.fillText(label, tx + px, ty + th / 2);
 
     if (await badgeReady) {
       const bh = 22 * u, bw = bh * badge.naturalWidth / badge.naturalHeight;
@@ -118,10 +154,11 @@ const Meals = (() => {
       c.toBlob(b => b ? resolve(b) : reject(new Error('Could not encode photo')), 'image/jpeg', .85));
   }
 
-  async function save(blob, when, source) {
+  async function save(blob, when, source, tag) {
     const meal = {
       id: `m${when.getTime()}${Math.random().toString(36).slice(2, 6)}`,
-      ts: when.getTime(), date: Store.iso(when), source, blob
+      ts: when.getTime(), date: Store.iso(when), source, blob,
+      ...(tag ? { plan: { mealIds: tag.ids, title: tag.title, macros: tag.macros, foods: tag.foods } } : {})
     };
     await put(meal);
     // ask once that the browser not evict the photos under storage pressure
@@ -142,9 +179,28 @@ const Meals = (() => {
    * the user backs out. Falls back to the OS camera when the browser
    * cannot give us a live stream (no permission, no HTTPS, old iOS).
    */
-  function capture() {
+  /**
+   * `choices`: the day's planned meals [{ id, title, macros, foods }] to tag
+   * the photo with; `preselect`: the id suggested (the next meal not eaten).
+   */
+  function capture({ choices = [], preselect = null } = {}) {
     return new Promise(resolve => {
       let stream = null, busy = false;
+      // several meals can be picked, for when two are eaten as one
+      const picked = new Set(choices.some(c => c.id === preselect) ? [preselect] : []);
+
+      /** The picked meals as one tag: "2nd + 3rd meal", macros added up. */
+      const currentTag = () => {
+        const chosen = choices.filter(c => picked.has(c.id));
+        if (!chosen.length) return null;
+        const sum = k => chosen.reduce((t, c) => t + c.macros[k], 0);
+        return {
+          ids: chosen.map(c => c.id),
+          title: chosen.length === 1 ? chosen[0].title : `${chosen.map(c => c.title.replace(/ meal$/, '')).join(' + ')} meal`,
+          macros: { p: sum('p'), c: sum('c'), f: sum('f'), kcal: sum('kcal') },
+          foods: chosen.flatMap(c => c.foods)
+        };
+      };
       const app = document.querySelector('.app');
       const previousFocus = document.activeElement;
 
@@ -155,13 +211,35 @@ const Meals = (() => {
       const shutter = el('button', { class: 'cam__shutter', type: 'button', 'aria-label': 'Take photo', disabled: true });
       const closeBtn = el('button', { class: 'cam__close', type: 'button', 'aria-label': 'Close camera' }, svg(ICON_X, { width: 2.4 }));
 
+      /* "Which meal is this?" — optional; "No meal" keeps the plain stamp */
+      const picker = el('div', { class: 'cam__meals', role: 'group', 'aria-label': 'Which meal is this?' });
+      const pickInfo = el('p', { class: 'cam__mealinfo num', 'aria-live': 'polite' });
+      const paintPicker = () => {
+        picker.replaceChildren(
+          el('span', { class: 'cam__ask', text: 'Which meal is this? Tap more than one if you ate them together.' }),
+          ...choices.map(c => el('button', {
+            class: 'chip chip--sm', type: 'button', 'aria-pressed': String(picked.has(c.id)),
+            onclick: () => { if (picked.has(c.id)) picked.delete(c.id); else picked.add(c.id); paintPicker(); }
+          }, c.title)),
+          el('button', {
+            class: 'chip chip--sm', type: 'button', 'aria-pressed': String(!picked.size),
+            onclick: () => { picked.clear(); paintPicker(); }
+          }, 'No meal'));
+        const tag = currentTag();
+        pickInfo.textContent = tag ? `${tag.title}: ${macroText(tag.macros)}` : 'Photo without meal details';
+      };
+      if (choices.length) paintPicker();
+
       const paintClock = () => { clock.textContent = timeOf(new Date()); };
       paintClock();
       const tick = setInterval(paintClock, 1000);
 
       const root = el('div', { class: 'cam', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Snap a meal' }, [
         el('div', { class: 'cam__stage' }, [video, clock, status]),
-        el('div', { class: 'cam__bar' }, [el('div', { class: 'cam__controls' }, [closeBtn, shutter, el('span')])])
+        el('div', { class: 'cam__bar' }, [
+          choices.length ? el('div', { class: 'cam__mealpick' }, [picker, pickInfo]) : null,
+          el('div', { class: 'cam__controls' }, [closeBtn, shutter, el('span')])
+        ])
       ]);
 
       const onKey = e => { if (e.key === 'Escape') { e.preventDefault(); finish(null); } };
@@ -184,8 +262,9 @@ const Meals = (() => {
         const when = new Date();
         try {
           root.classList.add('is-flash');
-          const blob = await stamp(source, sw, sh, when);
-          finish(await save(blob, when, origin));
+          const tag = currentTag();
+          const blob = await stamp(source, sw, sh, when, tag);
+          finish(await save(blob, when, origin, tag));
         } catch (err) {
           console.error(err);
           UI.toast('Could not save that photo — try again');
@@ -284,7 +363,9 @@ const Meals = (() => {
   async function share(meals) {
     const files = toFiles(meals);
     const text = meals.slice().sort((a, b) => a.ts - b.ts)
-      .map(m => `Meal — ${stampText(m.ts)}`).join('\n');
+      .map(m => m.plan
+        ? `${m.plan.title} — ${stampText(m.ts)} — ${macroText(m.plan.macros)}`
+        : `Meal — ${stampText(m.ts)}`).join('\n');
     if (await shareSheet(files, text)) return;
     download(files);
     UI.toast(files.length > 1 ? `${files.length} photos downloaded` : 'Photo downloaded');
@@ -303,5 +384,5 @@ const Meals = (() => {
     UI.toast(files.length > 1 ? `${files.length} photos saved to Downloads` : 'Saved to Downloads — find it in your gallery', 3000);
   }
 
-  return { all, remove, capture, share, saveToGallery, stampText, timeOf, ICON_CAMERA, ICON_SHARE };
+  return { all, remove, capture, share, saveToGallery, stampText, timeOf, macroText, ICON_CAMERA, ICON_SHARE };
 })();

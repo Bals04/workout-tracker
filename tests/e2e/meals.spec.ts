@@ -28,10 +28,13 @@ test.describe('Meal check-in', () => {
     await expect(cam).toBeVisible();
     const shutter = cam.getByRole('button', { name: 'Take photo' });
     await expect(shutter).toBeEnabled();
+    // tagging the meal is optional
+    await cam.getByRole('button', { name: 'No meal' }).click();
     await shutter.click();
 
     await expect(cam).toHaveCount(0);
     await expect(sheet(page).locator('.sheet__title')).toHaveText('Meal saved');
+    await expect(sheet(page).locator('.mealview__macros')).toHaveCount(0);
     await expect(sheet(page).locator('.mealview__stamp')).toContainText('12:34');
     await expect(sheet(page).getByRole('button', { name: 'Send to coach' })).toBeVisible();
 
@@ -51,6 +54,54 @@ test.describe('Meal check-in', () => {
     await tab(page, 'Meals').click();
     await expect(page.locator('.mealcard')).toHaveCount(1);
     expect(errors).toEqual([]);
+  });
+
+  test('a photo can be tagged with a planned meal, which carries its macros and ticks it off', async ({ page }) => {
+    await openApp(page, LUNCH);
+    await tab(page, 'Meals').click();
+    await page.getByRole('button', { name: 'Snap a meal' }).click();
+    const cam = page.getByRole('dialog', { name: 'Snap a meal' });
+
+    // the next meal not yet eaten is suggested
+    const meals = cam.getByRole('group', { name: /Which meal is this/ });
+    await expect(meals.getByRole('button', { name: '1st meal' })).toHaveAttribute('aria-pressed', 'true');
+    await meals.getByRole('button', { name: '1st meal' }).click();    // un-pick the suggestion
+    await meals.getByRole('button', { name: '2nd meal' }).click();
+    await expect(cam.locator('.cam__mealinfo')).toHaveText('2nd meal: 39g protein · 30g carbs · 5g fat · 330 kcal');
+    await cam.getByRole('button', { name: 'Take photo' }).click();
+
+    await expect(sheet(page).locator('.sheet__title')).toHaveText('2nd meal saved');
+    await expect(sheet(page).locator('.mealview__macros')).toContainText('39g protein');
+    await page.keyboard.press('Escape');
+
+    await expect(page.getByRole('button', { name: '2nd meal done' })).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.locator('.mealcard')).toHaveAccessibleName(/2nd meal at 12:34/);
+
+    // the next snap suggests the 1st meal, still not eaten
+    await page.getByRole('button', { name: 'Snap a meal' }).click();
+    await expect(cam.getByRole('group', { name: /Which meal is this/ }).getByRole('button', { name: '1st meal' }))
+      .toHaveAttribute('aria-pressed', 'true');
+  });
+
+  test('two meals eaten together go on one photo', async ({ page }) => {
+    await openApp(page, LUNCH);
+    await tab(page, 'Meals').click();
+    await page.getByRole('button', { name: 'Snap a meal' }).click();
+    const cam = page.getByRole('dialog', { name: 'Snap a meal' });
+    const meals = cam.getByRole('group', { name: /Which meal is this/ });
+    await meals.getByRole('button', { name: '1st meal' }).click();
+    await meals.getByRole('button', { name: '2nd meal' }).click();
+    await meals.getByRole('button', { name: '3rd meal' }).click();
+    await expect(meals.getByRole('button', { name: 'No meal' })).toHaveAttribute('aria-pressed', 'false');
+    // 39 + 42 g protein, 330 + 460 kcal
+    await expect(cam.locator('.cam__mealinfo')).toHaveText('2nd + 3rd meal: 81g protein · 88g carbs · 9g fat · 790 kcal');
+    await cam.getByRole('button', { name: 'Take photo' }).click();
+
+    await expect(sheet(page).locator('.sheet__title')).toHaveText('2nd + 3rd meal saved');
+    await page.keyboard.press('Escape');
+    await expect(page.getByRole('button', { name: '2nd meal done' })).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.getByRole('button', { name: '3rd meal done' })).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.getByRole('button', { name: '1st meal done' })).toHaveAttribute('aria-pressed', 'false');
   });
 
   test('closing the camera saves nothing and releases it', async ({ page }) => {
