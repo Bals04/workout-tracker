@@ -131,8 +131,87 @@ test.describe('Meal plan', () => {
     return errors;
   }
 
+  /** Start with no meals at all (the default plan file is withheld). */
+  async function withEmptyPlan(page: Page) {
+    // context-level, so requests the service worker makes are caught too
+    await page.context().route('**/data/meal-plan.json', r => r.fulfill({ json: { meals: [] } }));
+    const errors = await openApp(page, LUNCH);
+    await tab(page, 'Meals').click();
+    return errors;
+  }
+
   const macro = (page: Page, label: string) => page.locator('.macro').filter({ hasText: label });
   const search = (page: Page) => sheet(page).getByRole('searchbox', { name: 'Search foods' });
+
+  test('the default plan from data/meal-plan.json loads on first run', async ({ page }) => {
+    const errors = await openApp(page, LUNCH);
+    await tab(page, 'Meals').click();
+    await expect(page.locator('.planmeal')).toHaveCount(4);
+    await expect(page.getByRole('article', { name: '1st meal' }).locator('.food__amt')).toHaveText(['5 pcs', '3 pcs', '200 g']);
+    await expect(page.getByRole('article', { name: '2nd meal' }).getByRole('button', { name: '2 pcs Banana' })).toBeVisible();
+    await expect(macro(page, 'Protein').locator('.macro__of')).toHaveText('of 156g');
+
+    // removing every meal does not bring the default back
+    await page.getByRole('button', { name: 'Edit plan' }).click();
+    for (let i = 0; i < 4; i++) {
+      await sheet(page).getByRole('button', { name: /^Remove \d\w\w meal$/ }).first().click();
+      await page.locator('dialog').getByRole('button', { name: 'Remove' }).click();
+    }
+    await page.keyboard.press('Escape');
+    await page.reload();
+    await tab(page, 'Meals').click();
+    await expect(page.getByRole('button', { name: 'Build your meal plan' })).toBeVisible();
+    expect(errors).toEqual([]);
+  });
+
+  test('a different plan on screen gets an offer to load the saved one', async ({ page }) => {
+    // the situation that hid it: a one-meal plan built by hand before the file existed
+    await openApp(page, LUNCH);
+    await page.evaluate(() => {
+      const s = JSON.parse(localStorage.getItem('weekplan.v1') || '{}');
+      localStorage.setItem('weekplan.v1', JSON.stringify({ ...s, mealPlanSeeded: true, mealPlan: [
+        { id: 'm1', items: [{ id: 'i1', options: [{ food: 'egg', name: 'Egg, boiled', amount: 5, unit: 'pcs' }] }] },
+      ] }));
+    });
+    await page.reload();
+    await tab(page, 'Meals').click();
+
+    const offer = page.getByRole('region', { name: 'Your saved meal plan' });
+    await expect(offer).toContainText('4 meals · 156g protein');
+    await offer.getByRole('button', { name: 'Load it' }).click();
+    await expect(page.locator('.planmeal')).toHaveCount(4);
+    await expect(offer).toHaveCount(0);
+  });
+
+  test('"Not now" hides the offer for good', async ({ page }) => {
+    await withOldPlan(page);
+    await page.getByRole('button', { name: 'Edit plan' }).click();
+    await sheet(page).getByRole('button', { name: 'Remove 4th meal' }).click();
+    await page.locator('dialog').getByRole('button', { name: 'Remove' }).click();
+    await page.keyboard.press('Escape');
+
+    const offer = page.getByRole('region', { name: 'Your saved meal plan' });
+    await offer.getByRole('button', { name: 'Not now' }).click();
+    await expect(offer).toHaveCount(0);
+    await page.reload();
+    await tab(page, 'Meals').click();
+    await expect(page.locator('.planmeal')).toHaveCount(3);
+    await expect(offer).toHaveCount(0);
+  });
+
+  test('the default plan can be loaded on request over an existing one', async ({ page }) => {
+    await withOldPlan(page);
+    await page.getByRole('button', { name: 'Edit plan' }).click();
+    await sheet(page).getByRole('button', { name: 'Remove 4th meal' }).click();
+    await page.locator('dialog').getByRole('button', { name: 'Remove' }).click();
+    await expect(sheet(page).locator('.mealedit')).toHaveCount(3);
+
+    await sheet(page).getByRole('button', { name: 'Replace with my default plan' }).click();
+    await page.locator('dialog').getByRole('button', { name: 'Replace' }).click();
+    await expect(sheet(page).locator('.mealedit')).toHaveCount(4);
+    await page.keyboard.press('Escape');
+    await expect(macro(page, 'Protein').locator('.macro__of')).toHaveText('of 156g');
+  });
 
   test('an old text plan becomes foods with macros', async ({ page }) => {
     const errors = await withOldPlan(page);
@@ -148,13 +227,19 @@ test.describe('Meal plan', () => {
     expect(errors).toEqual([]);
   });
 
-  test('meals are ticked off and either/or foods are picked per day', async ({ page }) => {
+  test('meals are ticked off, filling the ring, and either/or foods are picked per day', async ({ page }) => {
     await withOldPlan(page);
     await expect(page.locator('.macros__head strong')).toHaveText('0 of 4 meals done');
+    await expect(page.locator('.donut')).toHaveAttribute('aria-label', 'Nothing eaten yet today');
+    await expect(page.locator('.donut__arc')).toHaveCount(0);
 
     await page.getByRole('button', { name: '1st meal done' }).click();
     await expect(page.locator('.macros__head strong')).toHaveText('1 of 4 meals done');
     await expect(macro(page, 'Protein').locator('strong')).toHaveText('38');
+    // three arcs, one per macro, sized by their share of calories
+    await expect(page.locator('.donut__arc')).toHaveCount(3);
+    await expect(page.locator('.donut')).toHaveAttribute('aria-label', /Calories eaten today: 659 of 1661\. Protein 23%, Carbs 39%, Fat 38%/);
+    await expect(page.locator('.donut__center strong')).toHaveText('659');
 
     const second = page.getByRole('article', { name: '2nd meal' });
     await expect(second.getByRole('button', { name: '2 pcs Okra' })).toHaveAttribute('aria-pressed', 'true');
@@ -169,34 +254,54 @@ test.describe('Meal plan', () => {
       .toHaveAttribute('aria-pressed', 'true');
   });
 
-  test('a plan is built food by food', async ({ page }) => {
-    const errors = await openApp(page, LUNCH);
-    await tab(page, 'Meals').click();
+  test('a plan is built food by food, sizing each as it is picked', async ({ page }) => {
+    const errors = await withEmptyPlan(page);
+    // an empty plan goes straight to choosing the first food
     await page.getByRole('button', { name: 'Build your meal plan' }).click();
-    await sheet(page).getByRole('button', { name: 'Add food to 1st meal' }).click();
+    await expect(sheet(page).locator('.sheet__title')).toHaveText('Add to 1st meal');
     await search(page).fill('chicken');
     await sheet(page).getByRole('button', { name: /Chicken breast \(raw\)/ }).click();
 
-    await expect(sheet(page).locator('.sheet__title')).toHaveText('Meal plan');
-    const amount = sheet(page).getByRole('spinbutton', { name: 'Amount of Chicken breast (raw)' });
-    await amount.fill('160');
-    await amount.blur();
+    // amount step, with a live preview
+    await sheet(page).getByRole('button', { name: '160 g' }).click();
+    await expect(sheet(page).locator('.portion__preview')).toContainText('36g protein');
+    await sheet(page).getByRole('button', { name: 'Add and pick another' }).click();
 
-    // an either/or
-    await sheet(page).getByRole('button', { name: 'Add food to 1st meal' }).click();
     await search(page).fill('okra');
     await sheet(page).getByRole('button', { name: /^Okra/ }).click();
+    await sheet(page).getByRole('button', { name: '2', exact: true }).click();
+    await sheet(page).getByRole('button', { name: 'Add to 1st meal' }).click();
+
+    // back in the editor, then an either/or
+    await expect(sheet(page).locator('.sheet__title')).toHaveText('Meal plan');
     await sheet(page).getByRole('button', { name: '+ or another food' }).nth(1).click();
     await search(page).fill('banana');
     await sheet(page).getByRole('button', { name: /^Banana/ }).click();
+    await sheet(page).getByRole('button', { name: 'Add as the other choice' }).click();
     await expect(sheet(page).locator('.mealedit__or')).toHaveCount(1);
 
     await sheet(page).getByRole('button', { name: 'Done' }).click();
     const meal = page.getByRole('article', { name: '1st meal' });
-    await expect(meal.locator('.food__amt').first()).toHaveText('160 g');
+    await expect(meal.locator('.food__amt')).toHaveText(['160 g', '2 pcs']);
     await expect(meal.locator('.food__p').first()).toHaveText('36g');
     await expect(meal.getByRole('button', { name: '1 pc Banana' })).toBeVisible();
     expect(errors).toEqual([]);
+  });
+
+  test('typing "160g chicken breast" adds it in one go', async ({ page }) => {
+    await withEmptyPlan(page);
+    await page.getByRole('button', { name: 'Build your meal plan' }).click();
+    await search(page).fill('160g chicken breast');
+    await expect(sheet(page).locator('.foodpick--quick')).toContainText('Add 160 g Chicken breast (raw)');
+    await search(page).press('Enter');
+    await expect(sheet(page).locator('.sheet__title')).toHaveText('Meal plan');
+    await expect(sheet(page).getByRole('spinbutton', { name: 'Amount of Chicken breast (raw)' })).toHaveValue('160');
+
+    // "2 okra/banana" becomes an either/or
+    await sheet(page).getByRole('button', { name: 'Add food to 1st meal' }).click();
+    await search(page).fill('2 okra/banana');
+    await sheet(page).locator('.foodpick--quick').click();
+    await expect(sheet(page).locator('.mealedit__or')).toHaveCount(1);
   });
 
   test('foods can be found in the USDA database and are kept', async ({ page }) => {
@@ -209,15 +314,14 @@ test.describe('Meal plan', () => {
         ],
       }] },
     }));
-    await openApp(page, LUNCH);
-    await tab(page, 'Meals').click();
+    await withEmptyPlan(page);
     await page.getByRole('button', { name: 'Build your meal plan' }).click();
-    await sheet(page).getByRole('button', { name: 'Add food to 1st meal' }).click();
     await search(page).fill('atlantic salmon');
     await sheet(page).getByRole('button', { name: 'Search USDA for "atlantic salmon"' }).click();
     const hit = sheet(page).getByRole('button', { name: /Salmon, Atlantic, wild, raw/ });
     await expect(hit).toContainText('19.8g protein · 142 kcal / 100 g');
     await hit.click();
+    await sheet(page).getByRole('button', { name: 'Add to 1st meal' }).click();
     await sheet(page).getByRole('button', { name: 'Done' }).click();
     await expect(page.locator('.food__p').first()).toHaveText('19.8g');
 
@@ -230,10 +334,8 @@ test.describe('Meal plan', () => {
 
   test('a used-up search limit points to the key in Settings', async ({ page }) => {
     await page.route('https://api.nal.usda.gov/**', route => route.fulfill({ status: 429, body: '' }));
-    await openApp(page, LUNCH);
-    await tab(page, 'Meals').click();
+    await withEmptyPlan(page);
     await page.getByRole('button', { name: 'Build your meal plan' }).click();
-    await sheet(page).getByRole('button', { name: 'Add food to 1st meal' }).click();
     await search(page).fill('quinoa');
     await search(page).press('Enter');
     await expect(sheet(page).locator('.foodlist__note--error')).toContainText('key in Settings');

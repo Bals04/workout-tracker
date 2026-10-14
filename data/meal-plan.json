@@ -1,0 +1,42 @@
+{
+  "about": "Default daily meal plan, loaded when the app has no meals yet. Food ids are the built-in foods in js/nutrition.js. Amounts are as weighed: chicken raw, rice cooked. A \"choice\" is an either/or you pick each day.",
+  "meals": [
+    {
+      "name": "1st meal",
+      "foods": [
+        { "food": "egg", "amount": 5, "unit": "pcs" },
+        { "food": "okra", "amount": 3, "unit": "pcs" },
+        { "food": "rice-cooked", "amount": 200, "unit": "g" }
+      ]
+    },
+    {
+      "name": "2nd meal",
+      "foods": [
+        { "food": "chicken-raw", "amount": 160, "unit": "g" },
+        { "food": "rice-cooked", "amount": 100, "unit": "g" },
+        { "choice": [
+          { "food": "okra", "amount": 2, "unit": "pcs" },
+          { "food": "banana", "amount": 2, "unit": "pcs" }
+        ] }
+      ]
+    },
+    {
+      "name": "3rd meal",
+      "foods": [
+        { "food": "chicken-raw", "amount": 160, "unit": "g" },
+        { "food": "rice-cooked", "amount": 200, "unit": "g" },
+        { "choice": [
+          { "food": "okra", "amount": 2, "unit": "pcs" },
+          { "food": "banana", "amount": 2, "unit": "pcs" }
+        ] }
+      ]
+    },
+    {
+      "name": "4th meal",
+      "foods": [
+        { "food": "chicken-raw", "amount": 160, "unit": "g" },
+        { "food": "okra", "amount": 5, "unit": "pcs" }
+      ]
+    }
+  ]
+}

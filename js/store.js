@@ -102,6 +102,7 @@ const Store = (() => {
     out.mealPlan = Array.isArray(s.mealPlan) ? s.mealPlan.filter(m => typeof m === 'string' || (m && Array.isArray(m.items))) : [];
     out.mealLogs = (s.mealLogs && typeof s.mealLogs === 'object') ? s.mealLogs : {};
     out.foods = (s.foods && typeof s.foods === 'object') ? s.foods : {};
+    out.mealPlanSeeded = !!s.mealPlanSeeded;
     out.settings = { ...base.settings, ...(s.settings || {}) };
     return out;
   }
@@ -336,6 +337,23 @@ const Store = (() => {
     commit();
   }
 
+  /** True once a plan has existed, so clearing it later never brings the default back. */
+  function needsDefaultMealPlan() {
+    if (state.mealPlanSeeded) return false;
+    if (state.mealPlan.length) { state.mealPlanSeeded = true; commit(); return false; }
+    return true;
+  }
+
+  /** Load the default plan (data/meal-plan.json): meals → foods, a "choice" is an either/or. */
+  function seedMealPlan(meals) {
+    state.mealPlan = meals.map(m => ({
+      id: uid(),
+      items: (m.foods || []).map(f => ({ id: uid(), options: (f.choice || [f]).map(o => ({ ...o })) }))
+    }));
+    state.mealPlanSeeded = true;
+    commit();
+  }
+
   function addMeal() {
     const meal = { id: uid(), items: [] };
     state.mealPlan.push(meal);
@@ -348,9 +366,12 @@ const Store = (() => {
     commit();
   }
 
-  function addFood(mealId, option) {
-    findMeal(mealId)?.items.push({ id: uid(), options: [option] });
+  /** Add a food (or an either/or, when given several options). Returns the item id. */
+  function addFood(mealId, options) {
+    const item = { id: uid(), options: [].concat(options) };
+    findMeal(mealId)?.items.push(item);
     commit();
+    return item.id;
   }
 
   /** Add an alternative to an item, making it an either/or. */
@@ -429,7 +450,7 @@ const Store = (() => {
     addExercise, removeExercise, updateExercise, moveExercise, clearDay, copyDay,
     toggleSet, isSetDone, doneCount, progress, resetDayLog,
     history, streak, weekSummary, weekVolume,
-    getMealPlan, upgradeMealPlan, addMeal, removeMeal, addFood, addAlternative, updateOption, removeOption,
+    getMealPlan, upgradeMealPlan, needsDefaultMealPlan, seedMealPlan, addMeal, removeMeal, addFood, addAlternative, updateOption, removeOption,
     saveFood, mealDay, toggleMealDone, pickOption,
     setSetting, exportJSON, importJSON, resetAll,
     get state() { return state; },
