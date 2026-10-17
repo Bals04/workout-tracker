@@ -124,6 +124,9 @@ p { margin: 0; }
   box-shadow: 0 3px 12px -3px color-mix(in srgb, var(--accent) 60%, transparent);
 }
 .brand__tile svg { width: 21px; height: 21px; }
+.brand__tile { overflow: hidden; }
+.brand__tile img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.brand__sub { font-size: .66rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--text-mute); line-height: 1.2; }
 .brand__text { min-width: 0; display: flex; flex-direction: column; gap: 1px; }
 .brand__name {
   font-size: .97rem; font-weight: 680; letter-spacing: -.032em; line-height: 1.16;
@@ -386,10 +389,19 @@ p { margin: 0; }
 }
 .excard.is-complete { border-color: color-mix(in srgb, var(--accent) 40%, var(--line)); }
 .excard.is-complete .excard__name { color: var(--text-dim); }
-.excard__top { display: flex; align-items: flex-start; gap: 13px; padding: 13px; }
-.excard__body { min-width: 0; flex: 1; }
+.excard__media { position: relative; }
+.excard__media .exfig {
+  width: 100%; height: 210px; border: 0; border-radius: 0;
+  border-bottom: 1px solid var(--line-soft);
+  background: radial-gradient(120% 90% at 50% 40%, var(--surface-2), var(--bg-elev));
+}
+.excard__media .exfig img { padding: 14px; }
+.excard__media .excard__count { position: absolute; top: 10px; right: 10px; }
+.excard__progress { position: absolute; inset: auto 0 0 0; height: 3px; background: transparent; }
+.excard__progress span { display: block; height: 100%; background: var(--accent); transition: width .3s var(--ease); }
+.excard__body { min-width: 0; padding: 13px 14px 0; }
 .excard__name {
-  font-size: .95rem; font-weight: 650; letter-spacing: -.02em; line-height: 1.25;
+  font-size: 1.08rem; font-weight: 750; letter-spacing: -.025em; line-height: 1.25;
   overflow-wrap: anywhere;
 }
 .excard__tags { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 5px; }
@@ -401,23 +413,26 @@ p { margin: 0; }
 .excard__target { margin-top: 7px; font-size: .8rem; color: var(--text-dim); font-weight: 600; }
 .excard__target b { color: var(--text); }
 .excard__count {
-  font-size: .74rem; font-weight: 700; color: var(--text-mute);
-  padding: 4px 9px; border-radius: var(--r-full); background: var(--surface-2);
+  font-size: .78rem; font-weight: 750; color: var(--text);
+  padding: 5px 10px; border-radius: var(--r-full);
+  background: color-mix(in srgb, var(--surface) 80%, transparent);
+  border: 1px solid var(--line);
+  -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
   flex: none; font-variant-numeric: tabular-nums;
 }
 .excard.is-complete .excard__count { background: var(--accent); color: var(--accent-ink); }
 
-.sets { display: flex; flex-wrap: wrap; gap: 7px; padding: 0 13px 13px; }
+.sets { display: grid; grid-template-columns: repeat(auto-fill, minmax(68px, 1fr)); gap: 8px; padding: 13px 14px 14px; }
 .setbtn {
   appearance: none; cursor: pointer; position: relative;
-  min-width: 54px; padding: 9px 8px; border-radius: var(--r-md);
+  min-width: 54px; min-height: 56px; padding: 9px 8px; border-radius: var(--r-md);
   background: var(--surface-2); border: 1px solid var(--line);
   color: var(--text-dim); text-align: center;
   transition: transform .13s var(--ease), background .18s var(--ease), color .18s var(--ease), border-color .18s var(--ease);
 }
 .setbtn:hover { border-color: var(--surface-3); color: var(--text); }
 .setbtn:active { transform: scale(.93); }
-.setbtn strong { display: block; font-size: .9rem; font-weight: 700; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+.setbtn strong { display: block; font-size: 1.02rem; font-weight: 700; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
 .setbtn span { display: block; font-size: .6rem; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; opacity: .72; margin-top: 1px; }
 .setbtn[aria-pressed="true"] {
   background: var(--accent); color: var(--accent-ink); border-color: transparent;
@@ -545,7 +560,7 @@ p { margin: 0; }
 .stat__val small { font-size: .8rem; font-weight: 650; color: var(--text-mute); letter-spacing: 0; }
 .stat__label { font-size: .72rem; font-weight: 650; color: var(--text-dim); margin-top: 5px; }
 
-.weekstrip { display: grid; grid-template-columns: repeat(5, 1fr); gap: 7px; }
+.weekstrip { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 5px; }
 .weekstrip__cell { text-align: center; }
 .weekstrip__dow { font-size: .62rem; font-weight: 750; letter-spacing: .07em; text-transform: uppercase; color: var(--text-mute); margin-bottom: 5px; }
 .weekstrip__dot {

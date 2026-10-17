@@ -1,4 +1,4 @@
-# Bals workout planner v1.0
+# BAW · Fitness tracker
 
 An installable, offline-capable PWA for planning a Mon–Fri training week and
 ticking off sets as you do them. You set your own exercises, sets and reps, and

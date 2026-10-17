@@ -4,11 +4,11 @@ import { openApp, tab, WEDNESDAY, MONDAY } from './helpers';
 test.describe('Top bar', () => {
   test('shows the product name', async ({ page }) => {
     await openApp(page, WEDNESDAY);
-    await expect(page.locator('.brand__name')).toHaveText('Bals workout planner');
+    await expect(page.locator('.brand__name')).toHaveText('BAW');
     await expect(page.locator('.brand__meta')).toHaveCount(0);
     // One page heading, with the product brand in the app bar.
     await expect(page.getByRole('heading', { level: 1 })).toHaveText('Gym Progress Tracker');
-    await expect(page).toHaveTitle(/Bals workout planner v1\.0/);
+    await expect(page).toHaveTitle(/BAW · Fitness tracker/);
   });
 
   test('the brand name is not truncated at phone width', async ({ page }) => {

@@ -1,7 +1,7 @@
 {
-  "name": "Bals workout planner",
-  "short_name": "Bals Planner",
-  "description": "Plan and track your Monday-to-Friday workouts. Set your own sets and reps, mark rest days. Works offline.",
+  "name": "BAW · Fitness tracker",
+  "short_name": "BAW",
+  "description": "A fitness tracker for your workouts and your meals: plan your week, log every set, follow your meal plan and macros. Works offline.",
   "start_url": "./?src=pwa",
   "scope": "./",
   "id": "bals-workout-planner",

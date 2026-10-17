@@ -2,7 +2,7 @@
   "name": "bals-workout-planner",
   "version": "1.0.0",
   "private": true,
-  "description": "Bals workout planner — a PWA for planning and tracking Monday-to-Friday workouts.",
+  "description": "BAW — a fitness tracker PWA for workouts and meals.",
   "scripts": {
     "start": "node tools/serve.js",
     "dev": "node tools/serve.js",

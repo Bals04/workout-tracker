@@ -11,3 +11,9 @@ Seventy-six first-pose frames are rasterized adaptations of artwork from
 artwork was placed on a transparent 512 × 512 canvas, recolored for monochrome
 display, and exported as optimized PNG. Exact source URLs are retained in
 `packages/workout-guide/manifest.json`.
+
+## Frames added in this app
+
+`assets/v-squat/` and `assets/smith-machine-shoulder-press/` are not from Workout Guide or Everkinetic. They were drawn for this
+app (AI-generated from a style reference, `art-reference/`) and converted with
+`tools/exercise-art.js`.

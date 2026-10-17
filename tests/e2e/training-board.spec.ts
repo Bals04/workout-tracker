@@ -28,7 +28,7 @@ test('clear-day confirmation cancels safely and updates totals after confirmatio
   await expect(page.locator('.plan-exercise')).toHaveCount(0);
 });
 
-test('day tabs support keyboard navigation and weekend recovery', async ({ page }) => {
+test('day tabs support keyboard navigation, and the weekend is editable', async ({ page }) => {
   await openApp(page, MONDAY);
   await tab(page, 'Plan').click();
   await page.getByRole('tab', { name: 'Monday', exact: true }).focus();
@@ -37,8 +37,11 @@ test('day tabs support keyboard navigation and weekend recovery', async ({ page 
   await expect(page.locator('.day-board h2')).toHaveText('Tuesday');
   await page.keyboard.press('End');
   await expect(page.locator('.day-board h2')).toHaveText('Sunday');
-  await expect(page.locator('.day-board')).toContainText('Enjoy your weekend');
-  await expect(page.locator('.day-board__actions')).toHaveCount(0);
+  // a rest day by default, with the same controls as any other day
+  await expect(page.locator('.day-board')).toContainText('Make room for recovery');
+  await page.getByRole('button', { name: 'Make training day' }).click();
+  await expect(page.getByRole('tab', { name: 'Sunday', exact: true })).not.toHaveClass(/is-rest/);
+  await expect(page.getByRole('button', { name: 'Add exercise' })).toBeVisible();
 });
 
 test('board add, delete and copy actions persist the plan', async ({ page }) => {

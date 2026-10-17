@@ -1,7 +1,7 @@
 /* ═══════════════════════════════════════════════════════════
    Store — plan + logs, persisted to localStorage.
 
-   plan : one entry per weekday (mon…fri), each either a rest
+   plan : one entry per day of the week (mon…sun), each either a rest
           day or a list of exercises with your own targets.
    logs : keyed by ISO date, recording which sets you ticked
           off, so history survives plan edits.
@@ -9,8 +9,8 @@
 
 const Store = (() => {
   const KEY = 'weekplan.v1';
-  const DAYS = ['mon', 'tue', 'wed', 'thu', 'fri'];
-  const DAY_NAMES = { mon: 'Monday', tue: 'Tuesday', wed: 'Wednesday', thu: 'Thursday', fri: 'Friday' };
+  const DAYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
+  const DAY_NAMES = { mon: 'Monday', tue: 'Tuesday', wed: 'Wednesday', thu: 'Thursday', fri: 'Friday', sat: 'Saturday', sun: 'Sunday' };
 
   let state = null;
 
@@ -64,6 +64,9 @@ const Store = (() => {
             seed('hanging-leg-raise',  { sets: 3, reps: 12, restSec: 60 }),
           ]
         },
+        // the weekend starts as rest, but it is a day like any other
+        sat: { rest: true, title: 'Rest', exercises: [] },
+        sun: { rest: true, title: 'Rest', exercises: [] },
       },
       logs: {},
       mealPlan: [],
@@ -129,10 +132,9 @@ const Store = (() => {
     return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
   }
 
-  /** 'mon'…'fri', or null on Sat/Sun. */
+  /** 'mon'…'sun' for a date. */
   function dayKey(d = new Date()) {
-    const i = d.getDay();          // 0 Sun … 6 Sat
-    return i >= 1 && i <= 5 ? DAYS[i - 1] : null;
+    return DAYS[(d.getDay() + 6) % 7];      // getDay: 0 Sun … 6 Sat
   }
 
   /** Monday of the week containing `ref`. */
@@ -141,12 +143,6 @@ const Store = (() => {
     const shift = (d.getDay() + 6) % 7;   // Mon = 0
     d.setDate(d.getDate() - shift);
     d.setHours(0, 0, 0, 0);
-    return d;
-  }
-
-  function nextWeekday(ref = new Date()) {
-    const d = new Date(ref);
-    do { d.setDate(d.getDate() + 1); } while (d.getDay() === 0 || d.getDay() === 6);
     return d;
   }
 
@@ -268,7 +264,7 @@ const Store = (() => {
       .slice(0, limit);
   }
 
-  /** Consecutive planned weekdays completed, counting back from today. */
+  /** Consecutive planned training days completed, counting back from today; rest days don't break it. */
   function streak() {
     let n = 0;
     const d = new Date();
@@ -445,7 +441,7 @@ const Store = (() => {
   return {
     DAYS, DAY_NAMES,
     load,
-    iso, dayKey, mondayOf, nextWeekday,
+    iso, dayKey, mondayOf,
     getDay, setDayTitle, setRest,
     addExercise, removeExercise, updateExercise, moveExercise, clearDay, copyDay,
     toggleSet, isSetDone, doneCount, progress, resetDayLog,

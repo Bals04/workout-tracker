@@ -6,7 +6,7 @@
   const { el, svg, ICON, clear, add, figure, ring, stepper } = UI;
 
   /** Single source for the product name — used in file names and copy. */
-  const APP = { name: 'Bals workout planner', version: '1.0', slug: 'bals-workout-planner' };
+  const APP = { name: 'BAW', version: '1.0', slug: 'baw-fitness-tracker' };
 
   const views = {
     today: document.getElementById('view-today'),
@@ -81,50 +81,6 @@
     const dkey = Store.dayKey(now);
     const date = Store.iso(now);
 
-    /* Weekend — nothing planned, so point at the next weekday */
-    if (!dkey) {
-      const next = Store.nextWeekday(now);
-      const nextKey = Store.dayKey(next);
-      const nextDay = Store.getDay(nextKey);
-
-      root.append(
-        el('div', { class: 'hero hero--rest' }, [
-          el('div', { class: 'hero__meta' }, [
-            el('div', { class: 'hero__date', text: fmtDate(now, { weekday: 'long', day: 'numeric', month: 'long' }) }),
-            el('h2', { class: 'hero__title', text: 'Weekend' }),
-            el('p', { class: 'hero__sub', html: 'Your plan runs Monday to Friday. Enjoy the time off.' })
-          ]),
-          (() => {
-            const w = el('div', { class: 'ring ring--rest' });
-            w.innerHTML = `<svg viewBox="0 0 86 86"><circle class="ring__track" cx="43" cy="43" r="38"></circle></svg>`;
-            const l = el('div', { class: 'ring__label' });
-            const m = svg(ICON.moon, { fill: 'currentColor' });
-            m.classList.add('ring__check');
-            l.append(m);
-            w.append(l);
-            return w;
-          })()
-        ])
-      );
-
-      root.append(el('div', { class: 'sechead' }, [
-        el('h2', { text: `Up next — ${Store.DAY_NAMES[nextKey]}` }),
-        el('span', { class: 'sechead__hint', text: fmtDate(next, { day: 'numeric', month: 'short' }) })
-      ]));
-
-      if (nextDay.rest) {
-        root.append(restCard(nextDay.title, 'This one is a rest day too.'));
-      } else if (!nextDay.exercises.length) {
-        root.append(emptyPlanCard(nextKey));
-      } else {
-        const list = el('div', { class: 'exlist' });
-        nextDay.exercises.forEach(item => list.append(previewCard(item)));
-        root.append(list);
-      }
-      add(root, installBar(), creditNote());
-      return;
-    }
-
     const day = Store.getDay(dkey);
     const prog = Store.progress(date, dkey);
     const complete = !day.rest && prog.total > 0 && prog.pct >= 100;
@@ -169,7 +125,7 @@
         el('button', {
           class: 'btn btn--block', type: 'button',
           onclick: () => openDayEditor(dkey)
-        }, [svg(ICON.calendar, { width: 1.9 }), 'Edit Monday–Friday plan'])
+        }, [svg(ICON.calendar, { width: 1.9 }), 'Edit this day'])
       );
       add(root, installBar(), creditNote());
       return;
@@ -246,18 +202,20 @@
     const done = Math.min(Store.doneCount(date, item.uid), sets);
     const card = el('div', { class: 'excard' + (done >= sets ? ' is-complete' : '') });
 
+    // the moving figure leads the card, big enough to read mid-workout
     card.append(
-      el('div', { class: 'excard__top' }, [
+      el('div', { class: 'excard__media' }, [
         figure(item.slug),
-        el('div', { class: 'excard__body' }, [
-          el('div', { class: 'excard__name', text: ex?.n || item.slug }),
-          el('div', { class: 'excard__tags' }, [
-            ex?.p ? el('span', { class: 'tag', text: ex.p }) : null,
-            ex?.q ? el('span', { class: 'tag', text: ex.q }) : null
-          ]),
-          el('div', { class: 'excard__target', html: `Target &nbsp;<b>${Catalog.summarise(item)}</b>` })
+        el('span', { class: 'excard__count num', text: `${done}/${sets}` }),
+        el('span', { class: 'excard__progress', 'aria-hidden': 'true' }, el('span', { style: `width:${(done / sets) * 100}%` }))
+      ]),
+      el('div', { class: 'excard__body' }, [
+        el('div', { class: 'excard__name', text: ex?.n || item.slug }),
+        el('div', { class: 'excard__tags' }, [
+          ex?.p ? el('span', { class: 'tag', text: ex.p }) : null,
+          ex?.q ? el('span', { class: 'tag', text: ex.q }) : null
         ]),
-        el('span', { class: 'excard__count num', text: `${done}/${sets}` })
+        el('div', { class: 'excard__target', html: `Target &nbsp;<b>${Catalog.summarise(item)}</b>` })
       ])
     );
 
@@ -290,31 +248,17 @@
     return card;
   }
 
-  /** Read-only card used for "up next" on weekends. */
-  function previewCard(item) {
-    const ex = Catalog.get(item.slug);
-    return el('div', { class: 'excard' }, [
-      el('div', { class: 'excard__top' }, [
-        figure(item.slug),
-        el('div', { class: 'excard__body' }, [
-          el('div', { class: 'excard__name', text: ex?.n || item.slug }),
-          el('div', { class: 'excard__target', html: `<b>${Catalog.summarise(item)}</b>` })
-        ])
-      ])
-    ]);
-  }
-
   /* ══════════════════════════════════════════════════════════
      WEEK / PLAN
      ══════════════════════════════════════════════════════════ */
   function renderWeek() {
     const root = clear(views.week);
     renderTrainingSummary();
-    const keys = [...Store.DAYS, 'sat', 'sun'];
-    const names = { ...Store.DAY_NAMES, sat: 'Saturday', sun: 'Sunday' };
+    const keys = Store.DAYS;
+    const names = Store.DAY_NAMES;
     const tabs = el('div', { class: 'plan-tabs', role: 'tablist', 'aria-label': 'Training days' });
     for (const key of keys) {
-      const day = Store.DAYS.includes(key) ? Store.getDay(key) : { rest: true, exercises: [] };
+      const day = Store.getDay(key);
       tabs.append(el('button', {
         class: 'plan-tab' + (day.rest ? ' is-rest' : ''), type: 'button', role: 'tab',
         id: `day-tab-${key}`, 'aria-selected': String(selectedDay === key),
@@ -332,18 +276,17 @@
     }
     root.append(tabs);
     const dkey = selectedDay;
-    const weekend = !Store.DAYS.includes(dkey);
-    const day = weekend ? { rest: true, exercises: [] } : Store.getDay(dkey);
+    const day = Store.getDay(dkey);
     const board = el('section', { class: 'day-board', id: 'day-board', role: 'tabpanel', 'aria-labelledby': `day-tab-${dkey}` });
     board.append(el('div', { class: 'day-board__head' }, [
       el('div', {}, [el('span', { class: 'day-label', text: dkey }), el('h2', { text: names[dkey] }),
         el('p', { text: day.rest ? 'Rest and recovery' : `${day.exercises.length} exercises${day.title && day.title !== names[dkey] ? ` · ${day.title}` : ''}` }),
-        weekend ? null : el('button', { class: 'session-edit', type: 'button', onclick: () => openDayEditor(dkey) }, 'Edit session')]),
+        el('button', { class: 'session-edit', type: 'button', onclick: () => openDayEditor(dkey) }, 'Edit session')]),
       el('div', { class: 'volume-badge', title: 'Planned sets × reps × weight (kg)' }, [
         el('strong', { text: Math.round(plannedVolume(day)).toLocaleString() }), el('span', { text: 'Volume' })])
     ]));
     if (day.rest) {
-      board.append(restCard('Make room for recovery', weekend ? 'Your training plan runs Monday to Friday. Enjoy your weekend.' : 'Take a breather. Your exercises are saved for when you are ready to train.'));
+      board.append(restCard('Make room for recovery', 'Take a breather. Tap "Make training day" whenever you want to train on this day instead.'));
     } else if (!day.exercises.length) {
       board.append(el('div', { class: 'empty' }, [el('h3', { text: 'Your next session starts here' }), el('p', { text: 'Add an exercise to start building this day.' })]));
     } else {
@@ -371,7 +314,7 @@
       });
       board.append(grid);
     }
-    if (!weekend) board.append(el('div', { class: 'day-board__actions' }, [
+    board.append(el('div', { class: 'day-board__actions' }, [
       el('button', { class: 'btn btn--rest', type: 'button', onclick: () => { Store.setRest(dkey, !day.rest); renderAll(); } }, [svg(ICON.moon), day.rest ? 'Make training day' : 'Mark rest']),
       el('button', { class: 'btn', type: 'button', onclick: () => UI.openSheet('Copy day', body => {
         body.append(el('p', { class: 'copy-description', text: `Copy ${names[dkey]} to another training day.` }));
@@ -453,7 +396,7 @@
         body.append(el('div', { class: 'empty' }, [
           svg(ICON.dumbbell, { width: 1.9 }),
           el('h3', { text: 'No exercises yet' }),
-          el('p', { text: 'Pick from 302 exercises, then set your own sets, reps and weight.' })
+          el('p', { text: `Pick from ${Catalog.all.length} exercises, then set your own sets, reps and weight.` })
         ]));
       } else {
         const list = el('div', { class: 'stack' });
@@ -561,7 +504,7 @@
         svg(ICON.search, { width: 2 }),
         el('input', {
           class: 'input', type: 'search', value: query,
-          placeholder: 'Search 302 exercises…', 'aria-label': 'Search exercises',
+          placeholder: `Search ${Catalog.all.length} exercises…`, 'aria-label': 'Search exercises',
           autocomplete: 'off'
         })
       ]);
@@ -625,7 +568,7 @@
         }
       }
 
-      // Repaint synchronously. Filtering 302 items costs well under a
+      // Repaint synchronously. Filtering ~300 items costs well under a
       // frame, and a debounce would let the list reshuffle under a
       // finger that is already coming down on a row.
       input.addEventListener('input', () => {
@@ -1417,10 +1360,10 @@
     root.append(el('div', { class: 'sechead', style: 'margin-top:2px' }, [
       el('h2', { text: 'This week' }),
       el('span', { class: 'sechead__hint',
-        text: `${fmtDate(Store.mondayOf(), { day: 'numeric', month: 'short' })} – ${fmtDate(week[4].dateObj, { day: 'numeric', month: 'short' })}` })
+        text: `${fmtDate(Store.mondayOf(), { day: 'numeric', month: 'short' })} – ${fmtDate(week[week.length - 1].dateObj, { day: 'numeric', month: 'short' })}` })
     ]));
 
-    /* Mon–Fri strip */
+    /* Mon–Sun strip */
     const strip = el('div', { class: 'weekstrip' });
     for (const cell of week) {
       const label = cell.status === 'rest' ? 'Rest'
@@ -1629,7 +1572,7 @@
   function creditNote() {
     return el('p', {
       class: 'credit',
-      html: '302 exercises · artwork from '
+      html: `${Catalog.all.length} exercises · artwork from `
           + '<a href="https://github.com/bryllim/workout-guide" target="_blank" rel="noopener">workout-guide</a>'
           + ' (CC BY-SA 4.0)'
     });

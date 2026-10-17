@@ -233,3 +233,34 @@ test.describe('Copy and clear', () => {
     await expect(page.locator('.empty h3')).toHaveText('No exercises yet');
   });
 });
+
+test('the V-Squat added to the library can be picked and shows its artwork', async ({ page }) => {
+  await openApp(page, WEDNESDAY);
+  await tab(page, 'Plan').click();
+  await page.locator('#day-tab-mon').click();
+  await page.getByRole('button', { name: 'Add exercise' }).click();
+  await sheet(page).getByRole('searchbox', { name: 'Search exercises' }).fill('v squat');
+  // the hyphen does not matter, and the exact name ranks first
+  const row = sheet(page).locator('.pickrow').first();
+  await expect(row).toContainText('V-Squat');
+  await expect(row).toContainText('Quads · Machine');
+  const loaded = await row.locator('.exfig img').first().evaluate(async (img: HTMLImageElement) => {
+    await img.decode();
+    return img.naturalWidth;
+  });
+  expect(loaded).toBe(512);
+});
+
+test('the Smith Machine Shoulder Press can be picked and shows both frames', async ({ page }) => {
+  await openApp(page, WEDNESDAY);
+  await tab(page, 'Plan').click();
+  await page.locator('#day-tab-mon').click();
+  await page.getByRole('button', { name: 'Add exercise' }).click();
+  await sheet(page).getByRole('searchbox', { name: 'Search exercises' }).fill('smith shoulder press');
+  const row = sheet(page).locator('.pickrow').first();
+  await expect(row).toContainText('Smith Machine Shoulder Press');
+  await expect(row).toContainText('Shoulders · Machine');
+  const sizes = await row.locator('.exfig img').evaluateAll(imgs =>
+    Promise.all(imgs.map(async (img: HTMLImageElement) => { await img.decode(); return img.naturalWidth; })));
+  expect(sizes).toEqual([512, 512]);
+});

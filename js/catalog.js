@@ -78,7 +78,9 @@ const Catalog = (() => {
   const frameCount = slug => (get(slug)?.f ?? 3);
 
   function search(query, { muscle = null, equipment = null, limit = 60 } = {}) {
-    const q = String(query || '').trim().toLowerCase();
+    // hyphens count as spaces, so "v squat" finds "V-Squat"
+    const flat = t => t.toLowerCase().replace(/[-_/]+/g, ' ').replace(/s+/g, ' ').trim();
+    const q = flat(String(query || ''));
     const words = q ? q.split(/\s+/) : [];
     const out = [];
 
@@ -88,8 +90,8 @@ const Catalog = (() => {
 
       let score = 0;
       if (words.length) {
-        const hay = `${e.n} ${e.p} ${e.q} ${e.m.join(' ')}`.toLowerCase();
-        const name = e.n.toLowerCase();
+        const hay = flat(`${e.n} ${e.p} ${e.q} ${e.m.join(' ')}`);
+        const name = flat(e.n);
         // every word must appear somewhere
         if (!words.every(w => hay.includes(w))) continue;
         if (name === q) score += 100;

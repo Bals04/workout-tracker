@@ -6,7 +6,7 @@ test.describe('PWA', () => {
     const res = await request.get('/app.webmanifest');
     expect(res.status()).toBe(200);
     const m = await res.json();
-    expect(m.name).toContain('Bals');
+    expect(m.name).toContain('BAW');
     expect(m.display).toBe('standalone');
     expect(m.start_url).toBeTruthy();
     const purposes = m.icons.map((i: any) => i.purpose);
@@ -210,7 +210,7 @@ test.describe('Settings', () => {
     const download = page.waitForEvent('download');
     await page.getByRole('button', { name: /Export plan/ }).click();
     const file = await download;
-    expect(file.suggestedFilename()).toMatch(/^bals-workout-planner-\d{4}-\d{2}-\d{2}\.json$/);
+    expect(file.suggestedFilename()).toMatch(/^baw-fitness-tracker-\d{4}-\d{2}-\d{2}\.json$/);
   });
 
   test('resetting everything restores the seeded plan', async ({ page }) => {

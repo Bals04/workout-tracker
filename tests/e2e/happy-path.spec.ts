@@ -21,10 +21,23 @@ test.describe('Today view', () => {
     await expect(page.locator('.hero__sub')).toContainText('13');
   });
 
-  test('points at the next weekday on a Saturday', async ({ page }) => {
+  test('a Saturday shows its own plan, a rest day by default', async ({ page }) => {
     await openApp(page, SATURDAY);
-    await expect(page.locator('.hero__title')).toHaveText('Weekend');
-    await expect(page.locator('.sechead h2').first()).toContainText('Monday');
+    await expect(page.locator('.hero__title')).toHaveText('Rest');
+    await expect(page.locator('.hero--rest')).toBeVisible();
+  });
+
+  test('a weekend day turned into a training day shows its session', async ({ page }) => {
+    await openApp(page, SATURDAY);
+    await tab(page, 'Plan').click();
+    await page.locator('#day-tab-sat').click();
+    await page.getByRole('button', { name: 'Make training day' }).click();
+    await page.getByRole('button', { name: 'Add exercise' }).click();
+    await page.locator('.sheet .pickrow').first().click();
+    await page.keyboard.press('Escape');
+    await tab(page, 'Today').click();
+    await expect(page.locator('.excard')).toHaveCount(1);
+    await expect(page.locator('.setbtn').first()).toBeVisible();
   });
 });
 
@@ -101,7 +114,7 @@ test.describe('Progress view', () => {
     await openApp(page, WEDNESDAY);
     await tab(page, 'Progress').click();
 
-    await expect(page.locator('.weekstrip__cell')).toHaveCount(5);
+    await expect(page.locator('.weekstrip__cell')).toHaveCount(7);
     await expect(page.locator('.stat')).toHaveCount(4);
     await expect(page.locator('.weekstrip__dot').nth(2)).toHaveAttribute('data-s', 'rest');
     await expect(page.locator('.empty h3')).toHaveText('No sessions yet');

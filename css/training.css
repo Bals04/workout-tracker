@@ -103,6 +103,7 @@ h1, h2, h3, h4 { font-weight: 800; }
 .hero__title { font-weight: 800; }
 .exlist { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); }
 .excard { min-width: 0; }
+@media (min-width: 651px) { .excard__media .exfig { height: 190px; } }
 .tag { color: var(--text-dim); }
 .sheet { background: var(--surface); }
 .sheet__title { font-weight: 800; }
@@ -131,7 +132,7 @@ h1, h2, h3, h4 { font-weight: 800; }
   .main:not([data-view="week"]) { padding-top: 16px; }
   /* keep the page heading for screen readers, just off screen */
   .main:not([data-view="week"]) .training-intro { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-  .main { padding: 0 16px 100px; }
+  .main { padding: 0 16px calc(var(--tabbar-h) + var(--safe-b) + 28px); }
   .appbar { padding-inline: 16px; }
   .training-intro { grid-template-columns: 1fr; gap: 0; padding-top: 14px; padding-bottom: 22px; }
   .training-intro__copy { padding: 16px 0 22px; }
@@ -163,4 +164,43 @@ h1, h2, h3, h4 { font-weight: 800; }
   .backup-panel { padding: 20px 16px; gap: 16px; }
   .backup-panel__actions { width: 100%; }
   .backup-panel__actions .btn { flex: 1; padding-inline: 8px; font-size: 10px; }
+}
+
+/* ── App shell ────────────────────────────────────────────────
+   Installed on a phone the page runs full-screen under the status
+   bar (viewport-fit=cover + black-translucent), so the header pads
+   itself below the notch and stays pinned like a native title bar;
+   the tab bar floats as frosted glass above the home indicator. */
+html { background: var(--bg); -webkit-tap-highlight-color: transparent; }
+body { overscroll-behavior-y: none; touch-action: manipulation; }
+.tabbar, .appbar, .tab, .btn, .chip { -webkit-user-select: none; user-select: none; }
+
+.appbar {
+  position: sticky; top: 0; z-index: 40;
+  padding-top: calc(var(--safe-t) + 12px);
+  background: color-mix(in srgb, var(--bg) 76%, transparent);
+  -webkit-backdrop-filter: blur(18px) saturate(1.6);
+  backdrop-filter: blur(18px) saturate(1.6);
+  border-bottom: 1px solid color-mix(in srgb, var(--text) 7%, transparent);
+}
+
+/* glass, at every width */
+.tabbar {
+  background: color-mix(in srgb, var(--bg-elev) 80%, transparent);
+  -webkit-backdrop-filter: blur(26px) saturate(1.8);
+  backdrop-filter: blur(26px) saturate(1.8);
+  border: 1px solid color-mix(in srgb, var(--text) 11%, transparent);
+  box-shadow: 0 14px 34px -10px rgb(0 0 0 / .6), inset 0 1px 0 color-mix(in srgb, #fff 9%, transparent);
+}
+:root[data-theme='light'] .tabbar { box-shadow: 0 14px 34px -12px rgb(16 21 27 / .28), inset 0 1px 0 #fff9; }
+
+/* floating, below desktop width (the desktop bar already floats, centred) */
+@media (max-width: 899px) {
+  :root { --tabbar-h: 82px; }     /* the bar plus its gap — everything that clears the bar reads this */
+  .tabbar {
+    left: 12px; right: 12px; bottom: calc(var(--safe-b) + 10px);
+    padding: 6px; gap: 2px;
+    border-radius: 24px;
+  }
+  .tabbar__pill, .tab { border-radius: 18px; }
 }
