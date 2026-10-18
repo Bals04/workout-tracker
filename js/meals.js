@@ -58,7 +58,7 @@ const Meals = (() => {
   const badgeReady = badge.decode().then(() => true, () => false);
 
   /* The macro colours from the app's dark theme — the band under them is always dark. */
-  const MACRO_INK = { p: '#3987e5', c: '#d95926', f: '#199e70' };
+  const MACRO_INK = { p: '#4caf50', c: '#e8b23a', f: '#e0352f' };
   const r0 = n => Math.round(n);
 
   /** "39g protein · 30g carbs · 5g fat · 330 kcal" */

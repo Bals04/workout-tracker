@@ -719,24 +719,33 @@
   }
 
   function macroDonut(eaten, planned) {
-    const R = 46, W = 13, C = 2 * Math.PI * R, GAP = 2.5;
-    const share = kcalShare(eaten);
+    // a full, thick ring split by macro; each segment's rounded end overlaps
+    // the next one. Before anything is eaten it previews the day's plan, dimmed
+    const R = 48, W = 12, C = 2 * Math.PI * R;
+    const preview = !(eaten.kcal > 0);
+    const basis = preview ? planned : eaten;
+    const share = kcalShare(basis);
     const parts = MACROS.filter(x => share[x.key] > 0);
     let offset = 0;
     const arcs = parts.map(x => {
       const len = share[x.key] * C;
-      const draw = Math.max(0, len - (parts.length > 1 ? GAP : 0));
+      // each dash spans exactly its share; its round caps spill W/2 over the
+      // neighbours, and drawing in reverse puts every end cap on top of the next arc
+      const solo = parts.length === 1;
+      const draw = solo ? C : len;
+      const start = offset;
       const arc = `<circle class="donut__arc donut__arc--${x.key}" cx="60" cy="60" r="${R}" stroke-width="${W}"
-        stroke-dasharray="${draw.toFixed(2)} ${(C - draw).toFixed(2)}" stroke-dashoffset="${(-offset).toFixed(2)}">
-        <title>${x.label}: ${r0(eaten[x.key])} g · ${r0(share[x.key] * 100)}% of calories</title></circle>`;
+        stroke-linecap="${solo ? 'butt' : 'round'}"
+        stroke-dasharray="${draw.toFixed(2)} ${(C - draw).toFixed(2)}" stroke-dashoffset="${(-start).toFixed(2)}">
+        <title>${x.label}: ${r0(basis[x.key])} g · ${r0(share[x.key] * 100)}% of calories${preview ? ' (planned)' : ''}</title></circle>`;
       offset += len;
       return arc;
-    }).join('');
-    const wrap = el('figure', { class: 'donut', 'aria-label': parts.length
-      ? `Calories eaten today: ${r0(eaten.kcal)} of ${r0(planned.kcal)}. ` + MACROS.map(x => `${x.label} ${r0((share[x.key] || 0) * 100)}%`).join(', ')
-      : 'Nothing eaten yet today' });
+    }).reverse().join('');
+    const wrap = el('figure', { class: 'donut' + (preview ? ' is-preview' : ''), 'aria-label': preview
+      ? `Nothing eaten yet today. Plan: ${r0(planned.kcal)} kcal`
+      : `Calories eaten today: ${r0(eaten.kcal)} of ${r0(planned.kcal)}. ` + MACROS.map(x => `${x.label} ${r0((share[x.key] || 0) * 100)}%`).join(', ') });
     wrap.innerHTML = `<svg viewBox="0 0 120 120" aria-hidden="true">
-      <circle class="donut__track" cx="60" cy="60" r="${R}" stroke-width="${W}"></circle>${arcs}</svg>`;
+      ${parts.length ? '' : `<circle class="donut__track" cx="60" cy="60" r="${R}" stroke-width="${W}"></circle>`}${arcs}</svg>`;
     wrap.append(el('figcaption', { class: 'donut__center' }, [
       el('strong', { class: 'num', text: r0(eaten.kcal).toLocaleString() }),
       el('span', { class: 'num', text: `of ${r0(planned.kcal).toLocaleString()} kcal` })
@@ -782,15 +791,12 @@
         el('span', { style: `width:${(doneMeals.length / plan.length) * 100}%` })),
       el('div', { class: 'macros__body' }, [
         macroDonut(eaten, planned),
+        // one quiet stat box per macro: grams eaten and the day's target
         el('ul', { class: 'macros__legend', 'aria-label': 'Eaten today' }, MACROS.map(({ key, label }) => {
-          const share = kcalShare(eaten)[key];
-          return el('li', { class: 'macro' }, [
-            mdot(key),
-            el('span', { class: 'macro__label', text: label }),
-            el('strong', { class: 'num', text: `${r0(eaten[key])}` }),
-            el('span', { class: 'macro__of num', text: `of ${r0(planned[key]).toLocaleString()}g` }),
-            el('span', { class: 'macro__pct num', text: share == null ? '' : `${r0(share * 100)}%`,
-              title: 'Share of calories eaten' })
+          return el('li', { class: `macro macro--${key}` }, [
+            el('span', { class: 'macro__label' }, [mdot(key), label]),
+            el('strong', { class: 'num' }, [`${r0(eaten[key])}`, el('small', { text: 'g' })]),
+            el('span', { class: 'macro__of num', text: `of ${r0(planned[key]).toLocaleString()}g` })
           ]);
         }))
       ])

@@ -281,14 +281,16 @@ test.describe('Meal plan', () => {
   test('meals are ticked off, filling the ring, and either/or foods are picked per day', async ({ page }) => {
     await withOldPlan(page);
     await expect(page.locator('.macros__head strong')).toHaveText('0 of 4 meals done');
-    await expect(page.locator('.donut')).toHaveAttribute('aria-label', 'Nothing eaten yet today');
-    await expect(page.locator('.donut__arc')).toHaveCount(0);
+    // before anything is eaten, the ring previews the plan, dimmed
+    await expect(page.locator('.donut')).toHaveAttribute('aria-label', 'Nothing eaten yet today. Plan: 1661 kcal');
+    await expect(page.locator('.donut')).toHaveClass(/is-preview/);
+    await expect(page.locator('.donut__arc')).toHaveCount(3);
 
     await page.getByRole('button', { name: '1st meal done' }).click();
     await expect(page.locator('.macros__head strong')).toHaveText('1 of 4 meals done');
-    await expect(macro(page, 'Protein').locator('strong')).toHaveText('38');
+    await expect(macro(page, 'Protein').locator('strong')).toHaveText('38g');
     // three arcs, one per macro, sized by their share of calories
-    await expect(page.locator('.donut__arc')).toHaveCount(3);
+    await expect(page.locator('.donut')).not.toHaveClass(/is-preview/);
     await expect(page.locator('.donut')).toHaveAttribute('aria-label', /Calories eaten today: 659 of 1661\. Protein 23%, Carbs 39%, Fat 38%/);
     await expect(page.locator('.donut__center strong')).toHaveText('659');
 
