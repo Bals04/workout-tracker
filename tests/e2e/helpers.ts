@@ -19,6 +19,10 @@ export async function openApp(page: Page, when: Date = WEDNESDAY) {
   await page.clock.setFixedTime(when);
   // Clear once, on the first navigation only — later reloads in a test
   // must see the state the test just built, or persistence is untestable.
+  // the startup splash would sit over the first ~1.6 s of every test
+  await page.addInitScript(() => {
+    document.addEventListener('DOMContentLoaded', () => document.getElementById('splash')?.remove());
+  });
   await page.addInitScript(() => {
     try {
       if (!sessionStorage.getItem('__seeded')) {

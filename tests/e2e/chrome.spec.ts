@@ -121,3 +121,12 @@ test.describe('Bottom bar', () => {
     await expect(page.locator('.tab[aria-current="page"] .tab__label')).toHaveText('Plan');
   });
 });
+
+test('Baw greets on startup, then gets out of the way', async ({ page }) => {
+  await page.goto('/#today');
+  const splash = page.locator('#splash');
+  await expect(splash).toBeVisible();
+  await expect(splash.locator('.splash__name')).toHaveText('BAW');
+  await expect(splash).toHaveCount(0, { timeout: 5000 });
+  await expect(page.locator('#view-today')).toBeVisible();
+});

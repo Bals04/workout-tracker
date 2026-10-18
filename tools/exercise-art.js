@@ -12,7 +12,9 @@
    Line weight can be tuned per drawing with env vars:
      ART_INK    brightness (0–255) at which a line is fully opaque — lower = bolder
      ART_STROKE extra thickness, 0–1 (0 = as drawn, 1 = one px bolder all round)
-     ART_OUT    write somewhere other than assets/<slug> (for trying settings)  */
+     ART_OUT    write somewhere other than assets/<slug> (for trying settings)
+     ART_FIT=each  fit every frame to its own drawing instead of one shared box —
+                   for frames drawn at different zooms (e.g. a cropped screenshot)  */
 
 const fs = require('fs');
 const path = require('path');
@@ -22,6 +24,7 @@ const SIZE = 512;
 const FILL = 460;          // longest side of the drawing, like the bundled frames
 const INK = Number(process.env.ART_INK ?? 210);     // lum at which a line is solid
 const STROKE = Number(process.env.ART_STROKE ?? 0); // soft thickening, 0–1 — off: drawn weight reads best
+const EACH = process.env.ART_FIT === 'each';
 
 const [slug, ...inputs] = process.argv.slice(2);
 if (!slug || !inputs.length) {
@@ -37,7 +40,7 @@ if (!slug || !inputs.length) {
     return `data:image/${ext};base64,${fs.readFileSync(file).toString('base64')}`;
   });
 
-  const frames = await page.evaluate(async ({ sources, SIZE, FILL, INK, STROKE }) => {
+  const frames = await page.evaluate(async ({ sources, SIZE, FILL, INK, STROKE, EACH }) => {
     const load = async src => { const img = new Image(); img.src = src; await img.decode(); return img; };
     const imgs = await Promise.all(sources.map(load));
 
@@ -58,19 +61,24 @@ if (!slug || !inputs.length) {
       return { c, d };
     });
 
-    // one crop box across all frames
-    let x0 = Infinity, y0 = Infinity, x1 = 0, y1 = 0;
-    for (const { c, d } of masks) {
-      for (let y = 0; y < c.height; y++) for (let x = 0; x < c.width; x++) {
-        if (d.data[(y * c.width + x) * 4 + 3] > 60) {
-          if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
+    /** Crop box of the drawn lines in the given masks. */
+    const boxOf = list => {
+      let x0 = Infinity, y0 = Infinity, x1 = 0, y1 = 0;
+      for (const { c, d } of list) {
+        for (let y = 0; y < c.height; y++) for (let x = 0; x < c.width; x++) {
+          if (d.data[(y * c.width + x) * 4 + 3] > 60) {
+            if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
+          }
         }
       }
-    }
-    const w = x1 - x0 + 1, h = y1 - y0 + 1, k = FILL / Math.max(w, h);
-    const dw = Math.round(w * k), dh = Math.round(h * k);
+      const w = x1 - x0 + 1, h = y1 - y0 + 1, k = FILL / Math.max(w, h);
+      return { x0, y0, w, h, dw: Math.round(w * k), dh: Math.round(h * k) };
+    };
+    const shared = EACH ? null : boxOf(masks);   // one box across all frames, so poses line up
 
-    return masks.map(({ c }) => {
+    return masks.map(m => {
+      const { c } = m;
+      const { x0, y0, w, h, dw, dh } = shared || boxOf([m]);
       const o = document.createElement('canvas');
       o.width = o.height = SIZE;
       const g = o.getContext('2d');
@@ -95,7 +103,7 @@ if (!slug || !inputs.length) {
       g.putImageData(out, 0, 0);
       return o.toDataURL('image/png');
     });
-  }, { sources, SIZE, FILL, INK, STROKE });
+  }, { sources, SIZE, FILL, INK, STROKE, EACH });
 
   const dir = process.env.ART_OUT || path.join(__dirname, '..', 'assets', slug);
   fs.mkdirSync(dir, { recursive: true });

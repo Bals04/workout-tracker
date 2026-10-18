@@ -196,6 +196,9 @@
   }
 
   /** Card with tappable set chips — the core logging interaction. */
+  /** The set tapped last, so its progress segment animates once. */
+  let justLogged = null;
+
   function exerciseCard(item, dkey, date) {
     const ex = Catalog.get(item.slug);
     const sets = Math.max(1, item.sets || 1);
@@ -207,7 +210,11 @@
       el('div', { class: 'excard__media' }, [
         figure(item.slug),
         el('span', { class: 'excard__count num', text: `${done}/${sets}` }),
-        el('span', { class: 'excard__progress', 'aria-hidden': 'true' }, el('span', { style: `width:${(done / sets) * 100}%` }))
+        // one segment per set; the set just logged sweeps in
+        el('span', { class: 'excard__progress', 'aria-hidden': 'true' }, Array.from({ length: sets }, (_, i) => el('span', {
+          class: 'seg' + (Store.isSetDone(date, item.uid, i) ? ' is-done' : '')
+            + (justLogged?.uid === item.uid && justLogged.idx === i ? ' is-new' : '')
+        })))
       ]),
       el('div', { class: 'excard__body' }, [
         el('div', { class: 'excard__name', text: ex?.n || item.slug }),
@@ -219,7 +226,10 @@
       ])
     );
 
-    const setsRow = el('div', { class: 'sets' });
+    // the set buttons share the full card width: one row up to 4 sets,
+    // then two even rows (5 → 3 + 2, 6 → 3 + 3, 8 → 4 + 4)
+    const cols = sets <= 4 ? sets : Math.ceil(sets / 2);
+    const setsRow = el('div', { class: 'sets', style: `--cols:${cols}` });
     for (let i = 0; i < sets; i++) {
       const isDone = Store.isSetDone(date, item.uid, i);
       const btn = el('button', {
@@ -233,6 +243,7 @@
 
       btn.addEventListener('click', () => {
         const nowDone = Store.toggleSet(date, dkey, item.uid, i);
+        justLogged = nowDone ? { uid: item.uid, idx: i } : null;
         if (nowDone && navigator.vibrate) navigator.vibrate(18);
         // Start the rest timer when a set lands and work remains.
         const total = Math.max(1, item.sets || 1);
@@ -1633,7 +1644,17 @@
   /* ══════════════════════════════════════════════════════════
      Boot
      ══════════════════════════════════════════════════════════ */
+  /** Startup splash: shown at least ~1.6 s, gone by ~3 s even if loading stalls. */
+  function hideSplash(shownAt) {
+    const splash = document.getElementById('splash');
+    if (!splash) return;
+    const go = () => { splash.classList.add('is-leaving'); setTimeout(() => splash.remove(), 450); };
+    setTimeout(go, Math.max(0, 1600 - (performance.now() - shownAt)));
+  }
+
   async function boot() {
+    const shownAt = performance.now();
+    setTimeout(() => hideSplash(shownAt), 3000);    // never strand the user behind it
     Store.load();
     applyTheme(Store.settings.theme || 'dark');
 
@@ -1671,6 +1692,7 @@
     if (document.fonts?.ready) document.fonts.ready.then(movePill);
 
     go(location.hash.slice(1) || 'week', { push: false });
+    hideSplash(shownAt);
 
     /* PWA — the install affordance lives in the app bar so it is
        reachable from every view, not just Today. */

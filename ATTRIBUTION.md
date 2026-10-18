@@ -14,6 +14,6 @@ display, and exported as optimized PNG. Exact source URLs are retained in
 
 ## Frames added in this app
 
-`assets/v-squat/` and `assets/smith-machine-shoulder-press/` are not from Workout Guide or Everkinetic. They were drawn for this
+`assets/v-squat/`, `assets/smith-machine-shoulder-press/`, `assets/incline-dumbbell-press-angled/`, `assets/ez-bar-preacher-curl/`, `assets/incline-machine-press/`, `assets/cross-body-hammer-curl/` and `assets/single-arm-dumbbell-curl/` are not from Workout Guide or Everkinetic. They were drawn for this
 app (AI-generated from a style reference, `art-reference/`) and converted with
 `tools/exercise-art.js`.
