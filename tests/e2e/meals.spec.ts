@@ -273,7 +273,7 @@ test.describe('Meal plan', () => {
     // chicken is weighed raw, and "oakra" still finds okra
     await expect(page.getByRole('article', { name: '4th meal' }).locator('.food__name'))
       .toContainText(['Chicken breast (raw)', 'Okra']);
-    await expect(page.locator('.food__p').filter({ hasText: '—' })).toHaveCount(0);
+    await expect(page.locator('.food__missing')).toHaveCount(0);
     await expect(macro(page, 'Protein').locator('.macro__of')).toHaveText('of 156g');
     expect(errors).toEqual([]);
   });
@@ -336,7 +336,7 @@ test.describe('Meal plan', () => {
     await sheet(page).getByRole('button', { name: 'Done' }).click();
     const meal = page.getByRole('article', { name: '1st meal' });
     await expect(meal.locator('.food__amt')).toHaveText(['160 g', '2 pcs']);
-    await expect(meal.locator('.food__p').first()).toHaveText('36g');
+    await expect(meal.locator('.food__macro').first()).toHaveText('Protein36g');
     await expect(meal.getByRole('button', { name: '1 pc Banana' })).toBeVisible();
     expect(errors).toEqual([]);
   });
@@ -377,7 +377,7 @@ test.describe('Meal plan', () => {
     await hit.click();
     await sheet(page).getByRole('button', { name: 'Add to 1st meal' }).click();
     await sheet(page).getByRole('button', { name: 'Done' }).click();
-    await expect(page.locator('.food__p').first()).toHaveText('19.8g');
+    await expect(page.locator('.food__macro').first()).toHaveText('Protein20g');
 
     // next time it is one of "your foods", no network needed
     await page.getByRole('button', { name: 'Edit plan' }).click();

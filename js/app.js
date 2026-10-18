@@ -825,24 +825,26 @@
     return wrap;
   }
 
+  /** Whole grams from 10 up; one decimal below, where it still matters. */
+  const grams = n => (n >= 10 ? r0(n) : r1(n));
+
   function foodRow(item, day, date) {
     const pick = pickOf(day, item);
     const opt = item.options[pick];
     const mac = Nutrition.macros(opt);
+    // name and calories on top; the amount and all three macros, labelled
+    // the same way, underneath
     const row = el('li', { class: 'food' }, [
-      el('span', { class: 'food__name' }, [
-        opt.name,
+      el('span', { class: 'food__name', text: opt.name }),
+      el('span', { class: 'food__kcal num', text: mac ? `${r0(mac.kcal)} kcal` : '' }),
+      el('div', { class: 'food__line' }, [
+        el('span', { class: 'food__amt num', text: Nutrition.amountLabel(opt) }),
         mac
-          ? el('small', { class: 'food__macros num' }, [
-              `${r0(mac.kcal)} kcal`,
-              el('span', {}, [mdot('c'), `${r1(mac.c)}g carbs`]),
-              el('span', {}, [mdot('f'), `${r1(mac.f)}g fat`])
-            ])
-          : el('small', { text: 'No nutrition data — find it in Edit plan' })
-      ]),
-      el('span', { class: 'food__amt num', text: Nutrition.amountLabel(opt) }),
-      el('span', { class: 'food__p num', 'aria-label': mac ? `${r1(mac.p)} grams protein` : 'Protein unknown' },
-        mac ? [mdot('p'), `${r1(mac.p)}g`] : '—')
+          ? el('span', { class: 'food__macros num' }, MACROS.map(({ key, label }) =>
+              el('span', { class: 'food__macro', 'aria-label': `${grams(mac[key])} grams ${label.toLowerCase()}` },
+                [mdot(key), el('span', { class: 'food__mlabel', text: label }), el('b', { text: `${grams(mac[key])}g` })])))
+          : el('span', { class: 'food__missing', text: 'No nutrition data — find it in Edit plan' })
+      ])
     ]);
     if (item.options.length > 1) {
       row.append(el('div', { class: 'food__pick', role: 'group', 'aria-label': 'Which one today?' },
