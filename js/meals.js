@@ -182,17 +182,27 @@ const Meals = (() => {
   ];
 
   /**
-   * Full-screen viewfinder. Resolves with the saved meal, or null if
-   * the user backs out. Falls back to the OS camera when the browser
-   * cannot give us a live stream (no permission, no HTTPS, old iOS).
-   */
-  /**
+   * Full-screen meal logger and viewfinder. Resolves with the saved
+   * meal, or null if the user backs out. Falls back to the OS camera
+   * when the browser cannot give a live stream (no permission, no
+   * HTTPS, old iOS).
+   *
+   * Two steps, one dialog:
+   *   1. Log — pick the meal, type what's in it, check the foods.
+   *   2. Shoot — a clean, full-screen camera with one summary pill.
+   * The macros from step 1 are what gets burned into the photo.
+   *
    * `choices`: the day's planned meals [{ id, title, macros, foods }] to tag
-   * the photo with; `preselect`: the id suggested (the next meal not eaten).
+   * the photo with; `preselect`: the id suggested (the next meal not eaten);
+   * `findFood(name)`: look up a food the AI could not match.
    */
+  const ICON_BACK = 'M15 18l-6-6 6-6';
+  const ICON_SEND = 'M5 12h14M13 6l6 6-6 6';
+  const ICON_WARN = ['M12 9v4', 'M12 17h.01', 'M10.3 3.9L1.8 18a2 2 0 001.7 3h17a2 2 0 001.7-3L13.7 3.9a2 2 0 00-3.4 0z'];
+
   function capture({ choices = [], preselect = null, findFood = null } = {}) {
     return new Promise(resolve => {
-      let stream = null, busy = false;
+      let stream = null, busy = false, cameraStarted = false;
       // several meals can be picked, for when two are eaten as one
       const picked = new Set(choices.some(c => c.id === preselect) ? [preselect] : []);
 
@@ -211,45 +221,12 @@ const Meals = (() => {
       const app = document.querySelector('.app');
       const previousFocus = document.activeElement;
 
-      const video = el('video', { class: 'cam__video', playsinline: true, muted: true, autoplay: true });
-      video.muted = true;   // the attribute alone is not enough for iOS autoplay
-      const clock = el('div', { class: 'cam__clock num', 'aria-hidden': 'true' });
-      const status = el('p', { class: 'cam__status', role: 'status', text: 'Starting camera…' });
-      const shutter = el('button', { class: 'cam__shutter', type: 'button', 'aria-label': 'Take photo', disabled: true });
-      const closeBtn = el('button', { class: 'cam__close', type: 'button', 'aria-label': 'Close camera' }, svg(ICON_X, { width: 2.4 }));
-
-      /* "Which meal is this?" — optional; "No meal" keeps the plain stamp */
-      const picker = el('div', { class: 'cam__meals', role: 'group', 'aria-label': 'Which meal is this?' });
-      const pickInfo = el('p', { class: 'cam__mealinfo num', 'aria-live': 'polite' });
-      const paintPicker = () => {
-        picker.replaceChildren(
-          el('span', { class: 'cam__ask', text: 'Which meal is this? Tap more than one if you ate them together.' }),
-          ...choices.map(c => el('button', {
-            class: 'chip chip--sm', type: 'button', 'aria-pressed': String(picked.has(c.id)),
-            onclick: () => { if (picked.has(c.id)) picked.delete(c.id); else picked.add(c.id); paintPicker(); }
-          }, c.title)),
-          el('button', {
-            class: 'chip chip--sm', type: 'button', 'aria-pressed': String(!picked.size),
-            onclick: () => { picked.clear(); paintPicker(); }
-          }, 'No meal'));
-        const tag = currentTag();
-        pickInfo.textContent = tag ? `${tag.title}: ${macroText(tag.macros)}` : 'Photo without meal details';
-        paintTotals();
-      };
-
-      /* "What's in it?" — typed before the shot, analyzed by the AI
-         against this device's foods. The confirmed macros are what
-         gets burned into the photo. */
+      /* ── AI state ── */
       let aiState = 'idle';        // 'idle' | 'loading' | 'done' | 'unavailable'
       let aiItems = [];            // [{ food, name, amount, unit, guessed }]
       let aiText = '';             // the text the items came from
       let aiError = '';
       let aiRun = 0;
-      const textBox = el('textarea', { class: 'cam__text', rows: 2, maxlength: 500,
-        'aria-label': "What's in this meal?", placeholder: "What's in it? e.g. 5 eggs, 1 cup rice, 3 okra" });
-      const analyzeBtn = el('button', { class: 'cam__analyze', type: 'button' }, 'Analyze');
-      const aiOut = el('div', { class: 'cam__aiout' });
-      const aiTotals = el('div', { class: 'cam__totals num', 'aria-live': 'polite' });
 
       /** The confirmed analysis, or null when there is nothing to count. */
       const analysis = () => {
@@ -263,45 +240,85 @@ const Meals = (() => {
         };
       };
 
+      /** What will be burned into the photo: analyzed, else the plan's (marked planned), else nothing. */
+      const onPhoto = () => {
+        const ai = analysis(), tag = currentTag();
+        if (ai) return { title: tag?.title || 'Meal', macros: ai.macros, planned: false };
+        if (tag) return { ...tag, planned: true };
+        return null;
+      };
+
+      /* ════ Step 1: log ════ */
+      const closeBtn = el('button', { class: 'cam__iconbtn', type: 'button', 'aria-label': 'Close camera' }, svg(ICON_X, { width: 2.4 }));
+
+      /* Which meal — optional; "No meal" keeps the plain stamp */
+      const picker = el('div', { class: 'cam__meals', role: 'group', 'aria-label': 'Which meal is this? Tap more than one if you ate them together.' });
+      function paintPicker() {
+        picker.replaceChildren(
+          ...choices.map(c => el('button', {
+            class: 'chip chip--sm', type: 'button', 'aria-pressed': String(picked.has(c.id)),
+            onclick: () => { if (picked.has(c.id)) picked.delete(c.id); else picked.add(c.id); paintPicker(); }
+          }, c.title)),
+          el('button', {
+            class: 'chip chip--sm', type: 'button', 'aria-pressed': String(!picked.size),
+            onclick: () => { picked.clear(); paintPicker(); }
+          }, 'No meal'));
+        paintSummary();
+      }
+
+      const textBox = el('textarea', { class: 'cam__text', rows: 2, maxlength: 500,
+        'aria-label': "What's in this meal?", placeholder: 'e.g. 5 eggs, 1 cup rice, 3 okra' });
+      const analyzeBtn = el('button', { class: 'cam__send', type: 'button', 'aria-label': 'Analyze' }, svg(ICON_SEND, { width: 2.4 }));
+      const aiOut = el('div', { class: 'cam__aiout' });
+      const summary = el('div', { class: 'cam__sum', 'aria-live': 'polite' });
+      const nextBtn = el('button', { class: 'cam__next', type: 'button' });
+
+      const macroPills = mac => el('div', { class: 'cam__pills num' }, [['p', 'protein'], ['c', 'carbs'], ['f', 'fat']]
+        .map(([k, label]) => el('span', { class: 'cam__pill' }, [el('i', { class: `mdot mdot--${k}`, 'aria-hidden': 'true' }), `${r0(mac[k])}g ${label}`])));
       const signed = n => `${n > 0 ? '+' : n < 0 ? '−' : '±'}${Math.abs(r0(n))}`;
-      function paintTotals() {
-        const ai = analysis(), plan = currentTag();
-        const lines = [];
-        if (aiState === 'done') {
-          const missing = aiItems.filter(it => !it.food).length;
-          if (ai) {
-            lines.push(el('p', { class: 'cam__ate' }, [el('b', { text: 'You ate: ' }), macroText(ai.macros)]));
-            if (plan) {
-              const d = k => ai.macros[k] - plan.macros[k];
-              lines.push(el('p', { class: 'cam__vs', text: `vs ${plan.title} plan: ${signed(d('p'))}g protein · ${signed(d('c'))}g carbs · ${signed(d('f'))}g fat · ${signed(d('kcal'))} kcal` }));
-            }
-          } else {
-            lines.push(el('p', { class: 'cam__vs', text: plan
-              ? 'Nothing counted yet. Find the foods, or your planned macros will be stamped.'
-              : 'Nothing counted yet. Find the foods, or the photo goes without macros.' }));
-          }
-          if (missing) lines.push(el('p', { class: 'cam__vs', text: `${missing} food${missing === 1 ? ' is' : 's are'} not in your foods and not counted.` }));
+
+      /** The pinned footer: exactly what the photo will say. */
+      function paintSummary() {
+        const shot = onPhoto(), tag = currentTag();
+        if (!shot) {
+          summary.replaceChildren(el('p', { class: 'cam__sumnone', text: 'No macros on the photo, just the time.' }));
+        } else {
+          const diff = !shot.planned && tag ? shot.macros.kcal - tag.macros.kcal : null;
+          summary.replaceChildren(
+            el('div', { class: 'cam__sumtop' }, [
+              el('strong', { class: 'cam__kcal num', text: `${r0(shot.macros.kcal)} kcal` }),
+              el('span', { class: 'cam__sumlabel', text: shot.planned ? `${shot.title} · planned` : shot.title }),
+              diff != null ? el('span', { class: 'cam__diff num' + (diff > 0 ? ' is-over' : ''), text: `${signed(diff)} vs plan` }) : null
+            ]),
+            macroPills(shot.macros));
         }
-        aiTotals.replaceChildren(...lines);
+        const pending = aiState === 'idle' && textBox.value.trim();
+        nextBtn.disabled = aiState === 'loading';
+        nextBtn.replaceChildren(aiState === 'loading' ? 'Analyzing…' : pending ? 'Analyze foods' : 'Open camera');
       }
 
       function paintAI() {
         analyzeBtn.disabled = aiState === 'loading' || !textBox.value.trim();
-        analyzeBtn.textContent = aiState === 'loading' ? 'Analyzing…' : 'Analyze';
-        if (aiState === 'unavailable') {
+        analyzeBtn.classList.toggle('is-loading', aiState === 'loading');
+        if (aiState === 'loading') {
+          aiOut.replaceChildren(el('p', { class: 'cam__hint', text: 'Matching to your foods…' }));
+        } else if (aiState === 'unavailable') {
           aiOut.replaceChildren(el('div', { class: 'cam__banner', role: 'alert' }, [
-            el('strong', { text: 'AI is unavailable right now.' }),
-            ` ${aiError} `,
-            currentTag() ? 'Your planned macros will be stamped instead.' : 'The photo will be stamped without macros.'
+            svg(ICON_WARN, { width: 2 }),
+            el('div', {}, [
+              el('strong', { text: 'AI is unavailable right now.' }),
+              el('span', { text: currentTag() ? 'Your planned macros will be stamped instead.' : 'The photo will go without macros.' }),
+              aiError ? el('small', { text: aiError }) : null
+            ])
           ]));
         } else if (aiState === 'done') {
           aiOut.replaceChildren(aiItems.length
             ? el('ul', { class: 'cam__items', 'aria-label': 'Foods found' }, aiItems.map(itemRow))
-            : el('p', { class: 'cam__vs', text: 'No foods found in that. Try naming them, e.g. "2 eggs, 150g rice".' }));
+            : el('p', { class: 'cam__hint', text: 'No foods found. Try naming them, e.g. "2 eggs, 150g rice".' }));
         } else {
-          aiOut.replaceChildren();
+          aiOut.replaceChildren(el('p', { class: 'cam__hint', text: 'Optional. The AI matches it to your foods, and you check the amounts.' }));
         }
-        paintTotals();
+        paintSummary();
       }
 
       function itemRow(it) {
@@ -309,17 +326,17 @@ const Meals = (() => {
           onclick: () => { aiItems = aiItems.filter(x => x !== it); paintAI(); } }, svg(ICON_X, { width: 2.4 }));
         if (!it.food) {
           return el('li', { class: 'cam__item is-missing' }, [
-            el('span', { class: 'cam__iname' }, [it.name, el('small', { text: 'Not in your foods' })]),
+            el('span', { class: 'cam__iname' }, [it.name, el('small', { text: 'Not in your foods, not counted' })]),
             findFood ? el('button', { class: 'cam__find', type: 'button', onclick: () => find(it) }, 'Find') : null,
             remove
           ]);
         }
         const amount = el('input', { class: 'cam__amt num', type: 'number', inputmode: 'decimal', min: 0, step: it.unit === 'pcs' ? 1 : 5,
           value: String(it.amount), 'aria-label': `Amount of ${it.name}` });
-        amount.addEventListener('input', () => { it.amount = Math.max(0, Number(amount.value) || 0); it.guessed = false; paintTotals(); });
-        return el('li', { class: 'cam__item' }, [
-          el('span', { class: 'cam__iname' }, [it.name, it.guessed ? el('small', { text: 'amount estimated, check it' }) : null]),
-          el('span', { class: 'cam__amtwrap' }, [amount, el('span', { class: 'cam__unit', text: it.unit === 'pcs' ? 'pcs' : 'g' })]),
+        amount.addEventListener('input', () => { it.amount = Math.max(0, Number(amount.value) || 0); paintSummary(); });
+        return el('li', { class: 'cam__item' + (it.guessed ? ' is-guessed' : '') }, [
+          el('span', { class: 'cam__iname' }, [it.name, it.guessed ? el('small', { text: 'Estimated, check it' }) : null]),
+          el('label', { class: 'cam__amtwrap' }, [amount, el('span', { class: 'cam__unit', text: it.unit === 'pcs' ? 'pcs' : 'g' })]),
           remove
         ]);
       }
@@ -332,7 +349,6 @@ const Meals = (() => {
           root.hidden = false;
           app.inert = true;
           document.body.style.overflow = 'hidden';
-          video.play?.().catch(() => {});
         }
         if (opt?.food) Object.assign(it, { food: opt.food, name: opt.name, amount: opt.amount, unit: opt.unit, guessed: false });
         paintAI();
@@ -368,37 +384,66 @@ const Meals = (() => {
       textBox.addEventListener('keydown', e => {
         if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); analyzeNow(); }
       });
+      // typed but not analyzed yet: analyze first, so unchecked numbers never reach the photo
+      nextBtn.onclick = () => {
+        if (aiState === 'loading') return;
+        if (aiState === 'idle' && textBox.value.trim()) { analyzeNow(); return; }
+        toStep('shoot');
+      };
 
-      /** False (and the AI started) when typed text has not been analyzed yet. */
-      function readyToShoot() {
-        if (aiState === 'loading') return false;
-        if (aiState === 'idle' && textBox.value.trim()) {
-          analyzeNow();
-          UI.toast('Check the foods, then take the photo');
-          return false;
-        }
-        return true;
+      const logView = el('div', { class: 'cam__log' }, [
+        el('header', { class: 'cam__head' }, [closeBtn, el('h2', { text: 'Log your meal' }), el('span')]),
+        el('div', { class: 'cam__scroll' }, [
+          choices.length ? el('section', { class: 'cam__sec' }, [el('h3', { class: 'cam__label', text: 'Which meal?' }), picker]) : null,
+          el('section', { class: 'cam__sec' }, [
+            el('h3', { class: 'cam__label', text: 'What did you eat?' }),
+            el('div', { class: 'cam__type' }, [textBox, analyzeBtn]),
+            aiOut
+          ])
+        ]),
+        el('footer', { class: 'cam__foot' }, [summary, nextBtn])
+      ]);
+
+      /* ════ Step 2: shoot ════ */
+      const video = el('video', { class: 'cam__video', playsinline: true, muted: true, autoplay: true });
+      video.muted = true;   // the attribute alone is not enough for iOS autoplay
+      const clock = el('div', { class: 'cam__clock num', 'aria-hidden': 'true' });
+      const status = el('p', { class: 'cam__status', role: 'status', text: 'Starting camera…' });
+      const shotInfo = el('div', { class: 'cam__shotinfo' });
+      const shutter = el('button', { class: 'cam__shutter', type: 'button', 'aria-label': 'Take photo', disabled: true });
+      const backBtn = el('button', { class: 'cam__iconbtn', type: 'button', 'aria-label': 'Back to foods' }, svg(ICON_BACK, { width: 2.6 }));
+      const closeBtn2 = el('button', { class: 'cam__iconbtn', type: 'button', 'aria-label': 'Close camera' }, svg(ICON_X, { width: 2.4 }));
+
+      function paintShotInfo() {
+        const shot = onPhoto();
+        shotInfo.replaceChildren(...(shot ? [
+          el('strong', {}, [shot.title, shot.planned ? el('small', { text: ' · planned' }) : null, ` · ${r0(shot.macros.kcal)} kcal`]),
+          macroPills(shot.macros)
+        ] : [el('strong', { text: 'Time stamp only' })]));
       }
 
-      if (choices.length) paintPicker();
-      paintAI();
+      const shootView = el('div', { class: 'cam__shoot' }, [
+        el('div', { class: 'cam__stage' }, [video, clock, status, shotInfo]),
+        el('div', { class: 'cam__controls' }, [backBtn, shutter, closeBtn2])
+      ]);
 
       const paintClock = () => { clock.textContent = timeOf(new Date()); };
       paintClock();
       const tick = setInterval(paintClock, 1000);
 
-      const root = el('div', { class: 'cam', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Snap a meal' }, [
-        el('div', { class: 'cam__stage' }, [video, clock, status]),
-        el('div', { class: 'cam__bar' }, [
-          choices.length ? el('div', { class: 'cam__mealpick' }, [picker, pickInfo]) : null,
-          el('div', { class: 'cam__ai' }, [
-            el('div', { class: 'cam__ask', text: "What's in it? The AI matches it to your foods." }),
-            el('div', { class: 'cam__type' }, [textBox, analyzeBtn]),
-            aiOut, aiTotals
-          ]),
-          el('div', { class: 'cam__controls' }, [closeBtn, shutter, el('span')])
-        ])
-      ]);
+      const root = el('div', { class: 'cam', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Snap a meal', 'data-step': 'log' },
+        [logView, shootView]);
+
+      function toStep(step) {
+        root.dataset.step = step;
+        if (step === 'shoot') {
+          paintShotInfo();
+          startCamera();
+          if (!shutter.disabled) shutter.focus();
+        } else {
+          nextBtn.focus();
+        }
+      }
 
       // while a food is being looked up the camera steps aside for that sheet
       const onKey = e => { if (e.key === 'Escape' && !root.hidden) { e.preventDefault(); finish(null); } };
@@ -424,9 +469,7 @@ const Meals = (() => {
           const tag = currentTag();
           const ai = analysis();
           const note = textBox.value.trim();
-          // the analyzed macros go on the photo; without them, the plan's — marked "planned"
-          const onPhoto = ai ? { title: tag?.title || 'Meal', macros: ai.macros } : tag ? { ...tag, planned: true } : null;
-          const blob = await stamp(source, sw, sh, when, onPhoto);
+          const blob = await stamp(source, sw, sh, when, onPhoto());
           finish(await save(blob, when, origin, tag, {
             ...(ai ? { ai } : {}),
             ...(note ? { note } : {}),
@@ -464,40 +507,52 @@ const Meals = (() => {
         });
         status.textContent = reason;
         shutter.disabled = false;
-        shutter.setAttribute('aria-label', 'Open camera');
-        shutter.onclick = () => { if (readyToShoot()) input.click(); };
+        shutter.setAttribute('aria-label', 'Open phone camera');
+        shutter.onclick = () => input.click();
         root.append(input);
+        if (root.dataset.step === 'shoot') shutter.focus();
       }
 
-      shutter.onclick = () => { if (readyToShoot()) shoot(video, video.videoWidth, video.videoHeight, 'live-camera'); };
-      closeBtn.onclick = () => finish(null);
+      /** The camera starts on step 2 only, so it is not running while you type. */
+      function startCamera() {
+        if (cameraStarted) return;
+        cameraStarted = true;
+        if (!navigator.mediaDevices?.getUserMedia) {
+          fallback('Tap the shutter to open your camera.');
+          return;
+        }
+        navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1440 } },
+          audio: false
+        }).then(s => {
+          if (!root.isConnected) { s.getTracks().forEach(t => t.stop()); return; }
+          stream = s;
+          video.srcObject = s;
+          video.addEventListener('loadedmetadata', () => {
+            status.hidden = true;
+            shutter.disabled = false;
+            if (root.dataset.step === 'shoot') shutter.focus();
+          }, { once: true });
+        }).catch(() => {
+          if (root.isConnected) fallback('Camera access is off for this app. Tap the shutter to use your phone camera instead.');
+        });
+      }
+
+      shutter.onclick = () => shoot(video, video.videoWidth, video.videoHeight, 'live-camera');
+      closeBtn.onclick = closeBtn2.onclick = () => finish(null);
+      backBtn.onclick = () => toStep('log');
       document.addEventListener('keydown', onKey);
+
+      if (choices.length) paintPicker();
+      paintAI();
+
       app.inert = true;
       document.body.style.overflow = 'hidden';
       document.body.append(root);
-      shutter.focus();
-
-      if (!navigator.mediaDevices?.getUserMedia) {
-        fallback('Tap the shutter to open your camera.');
-        return;
-      }
-      navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1440 } },
-        audio: false
-      }).then(s => {
-        if (!root.isConnected) { s.getTracks().forEach(t => t.stop()); return; }
-        stream = s;
-        video.srcObject = s;
-        video.addEventListener('loadedmetadata', () => {
-          status.hidden = true;
-          shutter.disabled = false;
-          shutter.focus();
-        }, { once: true });
-      }).catch(() => {
-        if (root.isConnected) fallback('Camera access is off for this app. Tap the shutter to use your phone camera instead.');
-      });
+      nextBtn.focus();
     });
   }
+
 
   /* ── sharing & saving ────────────────────────────────────── */
   const toFiles = meals => meals.map(m => new File([m.blob], fileName(m), { type: 'image/jpeg', lastModified: m.ts }));

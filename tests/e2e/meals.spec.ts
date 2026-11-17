@@ -26,10 +26,13 @@ test.describe('Meal check-in', () => {
 
     const cam = page.getByRole('dialog', { name: 'Snap a meal' });
     await expect(cam).toBeVisible();
-    const shutter = cam.getByRole('button', { name: 'Take photo' });
-    await expect(shutter).toBeEnabled();
     // tagging the meal is optional
     await cam.getByRole('button', { name: 'No meal' }).click();
+    await expect(cam.locator('.cam__sum')).toHaveText('No macros on the photo, just the time.');
+    await cam.getByRole('button', { name: 'Open camera' }).click();
+    const shutter = cam.getByRole('button', { name: 'Take photo' });
+    await expect(shutter).toBeEnabled();
+    await expect(cam.locator('.cam__shotinfo')).toHaveText('Time stamp only');
     await shutter.click();
 
     await expect(cam).toHaveCount(0);
@@ -67,7 +70,11 @@ test.describe('Meal check-in', () => {
     await expect(meals.getByRole('button', { name: '1st meal' })).toHaveAttribute('aria-pressed', 'true');
     await meals.getByRole('button', { name: '1st meal' }).click();    // un-pick the suggestion
     await meals.getByRole('button', { name: '2nd meal' }).click();
-    await expect(cam.locator('.cam__mealinfo')).toHaveText('2nd meal: 39g protein · 30g carbs · 5g fat · 330 kcal');
+    // the footer shows what goes on the photo: the plan's numbers, marked planned
+    await expect(cam.locator('.cam__kcal')).toHaveText('330 kcal');
+    await expect(cam.locator('.cam__sumlabel')).toHaveText('2nd meal · planned');
+    await expect(cam.locator('.cam__sum .cam__pills')).toHaveText(/39g protein\s*30g carbs\s*5g fat/);
+    await cam.getByRole('button', { name: 'Open camera' }).click();
     await cam.getByRole('button', { name: 'Take photo' }).click();
 
     await expect(sheet(page).locator('.sheet__title')).toHaveText('2nd meal saved');
@@ -94,7 +101,10 @@ test.describe('Meal check-in', () => {
     await meals.getByRole('button', { name: '3rd meal' }).click();
     await expect(meals.getByRole('button', { name: 'No meal' })).toHaveAttribute('aria-pressed', 'false');
     // 39 + 42 g protein, 330 + 460 kcal
-    await expect(cam.locator('.cam__mealinfo')).toHaveText('2nd + 3rd meal: 81g protein · 88g carbs · 9g fat · 790 kcal');
+    await expect(cam.locator('.cam__kcal')).toHaveText('790 kcal');
+    await expect(cam.locator('.cam__sumlabel')).toHaveText('2nd + 3rd meal · planned');
+    await expect(cam.locator('.cam__sum .cam__pills')).toHaveText(/81g protein\s*88g carbs\s*9g fat/);
+    await cam.getByRole('button', { name: 'Open camera' }).click();
     await cam.getByRole('button', { name: 'Take photo' }).click();
 
     await expect(sheet(page).locator('.sheet__title')).toHaveText('2nd + 3rd meal saved');
@@ -109,7 +119,11 @@ test.describe('Meal check-in', () => {
     await tab(page, 'Meals').click();
     await page.getByRole('button', { name: 'Snap a meal' }).click();
     const cam = page.getByRole('dialog', { name: 'Snap a meal' });
+    await cam.getByRole('button', { name: 'Open camera' }).click();
     await expect(cam.getByRole('button', { name: 'Take photo' })).toBeEnabled();
+    // back to the foods, then out
+    await cam.getByRole('button', { name: 'Back to foods' }).click();
+    await expect(cam.getByRole('button', { name: 'Take photo' })).toBeHidden();
     await cam.getByRole('button', { name: 'Close camera' }).click();
     await expect(cam).toHaveCount(0);
     await expect(page.locator('.mealcard')).toHaveCount(0);
@@ -120,6 +134,7 @@ test.describe('Meal check-in', () => {
     await openApp(page, LUNCH);
     await tab(page, 'Meals').click();
     await page.getByRole('button', { name: 'Snap a meal' }).click();
+    await page.getByRole('button', { name: 'Open camera' }).click();
     await page.getByRole('button', { name: 'Take photo' }).click();
     const [download] = await Promise.all([
       page.waitForEvent('download'),
@@ -133,6 +148,7 @@ test.describe('Meal check-in', () => {
     await openApp(page, LUNCH);
     await tab(page, 'Meals').click();
     await page.getByRole('button', { name: 'Snap a meal' }).click();
+    await page.getByRole('button', { name: 'Open camera' }).click();
     await page.getByRole('button', { name: 'Take photo' }).click();
     await sheet(page).getByRole('button', { name: 'Delete' }).click();
     await page.locator('dialog').getByRole('button', { name: 'Delete' }).click();
@@ -153,6 +169,7 @@ test.describe('Save to gallery on iPhone', () => {
     await openApp(page, LUNCH);
     await tab(page, 'Meals').click();
     await page.getByRole('button', { name: 'Snap a meal' }).click();
+    await page.getByRole('button', { name: 'Open camera' }).click();
     await page.getByRole('button', { name: 'Take photo' }).click();
     await sheet(page).getByRole('button', { name: 'Save to gallery' }).click();
     await expect(page.locator('#toast')).toContainText('Save Image');
@@ -195,16 +212,18 @@ test.describe('Meal AI', () => {
     const cam = await openCamFor(page, '2nd meal');
 
     await cam.getByRole('textbox', { name: "What's in this meal?" }).fill('200g chicken, 100g rice, 2 okra, 2 pandesal');
-    // the shutter will not stamp unchecked numbers: it analyzes first
-    await cam.getByRole('button', { name: 'Take photo' }).click();
-    await expect(cam).toBeVisible();
+    // typed but not analyzed: the main button analyzes first, so unchecked numbers never reach the photo
+    await cam.getByRole('button', { name: 'Analyze foods' }).click();
+    await expect(cam.getByRole('button', { name: 'Open camera' })).toBeVisible();
 
     const items = cam.getByRole('list', { name: 'Foods found' });
     await expect(items.locator('.cam__item')).toHaveCount(5);
     await expect(items.locator('.cam__item.is-missing')).toHaveCount(2);     // pandesal, and the id we don't have
-    await expect(cam.locator('.cam__ate')).toHaveText('You ate: 48g protein · 30g carbs · 6g fat · 378 kcal');
-    await expect(cam.locator('.cam__totals')).toContainText('vs 2nd meal plan: +9g protein');
-    await expect(cam.locator('.cam__totals')).toContainText('2 foods are not in your foods and not counted.');
+    await expect(cam.locator('.cam__kcal')).toHaveText('378 kcal');
+    await expect(cam.locator('.cam__sumlabel')).toHaveText('2nd meal');
+    await expect(cam.locator('.cam__diff')).toHaveText('+48 vs plan');
+    await expect(cam.locator('.cam__sum .cam__pills')).toHaveText(/48g protein\s*30g carbs\s*6g fat/);
+    await expect(items.locator('.cam__item.is-guessed')).toHaveText(/Okra\s*Estimated, check it/);
 
     // the AI was given the text and this device's foods, never asked for numbers
     expect(seen[0].text).toBe('200g chicken, 100g rice, 2 okra, 2 pandesal');
@@ -213,8 +232,12 @@ test.describe('Meal AI', () => {
 
     // amounts can be corrected before the shot
     await cam.getByRole('spinbutton', { name: 'Amount of Chicken breast (raw)' }).fill('300');
-    await expect(cam.locator('.cam__ate')).toHaveText('You ate: 71g protein · 30g carbs · 8g fat · 498 kcal');
+    await expect(cam.locator('.cam__kcal')).toHaveText('498 kcal');
+    await expect(cam.locator('.cam__sum .cam__pills')).toHaveText(/71g protein\s*30g carbs\s*8g fat/);
 
+    // the camera step carries the same numbers in one pill
+    await cam.getByRole('button', { name: 'Open camera' }).click();
+    await expect(cam.locator('.cam__shotinfo')).toContainText('2nd meal · 498 kcal');
     await cam.getByRole('button', { name: 'Take photo' }).click();
     await expect(cam).toHaveCount(0);
     await expect(sheet(page).locator('.sheet__title')).toHaveText('2nd meal saved');
@@ -241,12 +264,15 @@ test.describe('Meal AI', () => {
     const cam = await openCamFor(page, '2nd meal');
 
     await cam.getByRole('textbox', { name: "What's in this meal?" }).fill('chicken and rice');
-    await cam.getByRole('button', { name: 'Analyze' }).click();
+    await cam.getByRole('button', { name: 'Analyze', exact: true }).click();
     const banner = cam.getByRole('alert');
     await expect(banner).toContainText('AI is unavailable right now.');
     await expect(banner).toContainText('used up its requests for today');
     await expect(banner).toContainText('Your planned macros will be stamped instead.');
+    await expect(cam.locator('.cam__sumlabel')).toHaveText('2nd meal · planned');
 
+    await cam.getByRole('button', { name: 'Open camera' }).click();
+    await expect(cam.locator('.cam__shotinfo')).toContainText('2nd meal · planned · 330 kcal');
     await cam.getByRole('button', { name: 'Take photo' }).click();
     await expect(sheet(page).locator('.sheet__title')).toHaveText('2nd meal saved');
     await expect(sheet(page).locator('.mealview__macros')).toContainText('39g protein');
@@ -262,8 +288,10 @@ test.describe('Meal AI', () => {
     const cam = await openCamFor(page, '2nd meal');
 
     await cam.getByRole('textbox', { name: "What's in this meal?" }).fill('two bananas');
-    await cam.getByRole('button', { name: 'Analyze' }).click();
-    await expect(cam.locator('.cam__totals')).toContainText('Nothing counted yet');
+    await cam.getByRole('button', { name: 'Analyze', exact: true }).click();
+    // nothing counted yet, so the plan's numbers stand
+    await expect(cam.locator('.cam__sumlabel')).toHaveText('2nd meal · planned');
+    await expect(cam.locator('.cam__item.is-missing')).toContainText('Not in your foods, not counted');
     await cam.getByRole('button', { name: 'Find' }).click();
 
     await expect(sheet(page).locator('.sheet__title')).toHaveText('Find bananas');
@@ -273,7 +301,8 @@ test.describe('Meal AI', () => {
 
     await expect(cam).toBeVisible();
     await expect(cam.getByRole('spinbutton', { name: 'Amount of Banana' })).toHaveValue('2');
-    await expect(cam.locator('.cam__ate')).toHaveText('You ate: 3g protein · 54g carbs · 1g fat · 210 kcal');
+    await expect(cam.locator('.cam__kcal')).toHaveText('210 kcal');
+    await expect(cam.locator('.cam__sum .cam__pills')).toHaveText(/3g protein\s*54g carbs\s*1g fat/);
   });
 });
 
