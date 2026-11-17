@@ -162,6 +162,121 @@ test.describe('Save to gallery on iPhone', () => {
   });
 });
 
+test.describe('Meal AI', () => {
+  /** Stub /api/meal-ai; returns the request bodies it saw. */
+  async function stubAI(page: Page, reply: { status?: number; json: unknown }) {
+    const seen: any[] = [];
+    await page.context().route('**/api/meal-ai', async route => {
+      seen.push(route.request().postDataJSON());
+      await route.fulfill({ status: reply.status ?? 200, json: reply.json });
+    });
+    return seen;
+  }
+
+  async function openCamFor(page: Page, mealTitle: string) {
+    await tab(page, 'Meals').click();
+    await page.getByRole('button', { name: 'Snap a meal' }).click();
+    const cam = page.getByRole('dialog', { name: 'Snap a meal' });
+    const meals = cam.getByRole('group', { name: /Which meal is this/ });
+    await meals.getByRole('button', { name: '1st meal' }).click();   // un-pick the suggestion
+    await meals.getByRole('button', { name: mealTitle }).click();
+    return cam;
+  }
+
+  test('typed foods are analyzed against your foods, checked, and stamped instead of the plan', async ({ page }) => {
+    const seen = await stubAI(page, { json: { items: [
+      { food: 'chicken-raw', name: 'Chicken breast (raw)', amount: 200, unit: 'g', guessed: false },
+      { food: 'rice-cooked', name: 'White rice (cooked)', amount: 100, unit: 'g', guessed: false },
+      { food: 'okra', name: 'Okra', amount: 2, unit: 'pcs', guessed: true },
+      { food: null, name: 'pandesal', amount: 2, unit: 'pcs' },
+      { food: 'made-up-id', name: 'Ghost food', amount: 100, unit: 'g' }
+    ] } });
+    const errors = await openApp(page, LUNCH);
+    const cam = await openCamFor(page, '2nd meal');
+
+    await cam.getByRole('textbox', { name: "What's in this meal?" }).fill('200g chicken, 100g rice, 2 okra, 2 pandesal');
+    // the shutter will not stamp unchecked numbers: it analyzes first
+    await cam.getByRole('button', { name: 'Take photo' }).click();
+    await expect(cam).toBeVisible();
+
+    const items = cam.getByRole('list', { name: 'Foods found' });
+    await expect(items.locator('.cam__item')).toHaveCount(5);
+    await expect(items.locator('.cam__item.is-missing')).toHaveCount(2);     // pandesal, and the id we don't have
+    await expect(cam.locator('.cam__ate')).toHaveText('You ate: 48g protein · 30g carbs · 6g fat · 378 kcal');
+    await expect(cam.locator('.cam__totals')).toContainText('vs 2nd meal plan: +9g protein');
+    await expect(cam.locator('.cam__totals')).toContainText('2 foods are not in your foods and not counted.');
+
+    // the AI was given the text and this device's foods, never asked for numbers
+    expect(seen[0].text).toBe('200g chicken, 100g rice, 2 okra, 2 pandesal');
+    expect(seen[0].foods.map((f: any) => f.id)).toContain('chicken-raw');
+    expect(seen[0].foods[0].per100).toBeUndefined();
+
+    // amounts can be corrected before the shot
+    await cam.getByRole('spinbutton', { name: 'Amount of Chicken breast (raw)' }).fill('300');
+    await expect(cam.locator('.cam__ate')).toHaveText('You ate: 71g protein · 30g carbs · 8g fat · 498 kcal');
+
+    await cam.getByRole('button', { name: 'Take photo' }).click();
+    await expect(cam).toHaveCount(0);
+    await expect(sheet(page).locator('.sheet__title')).toHaveText('2nd meal saved');
+    await expect(sheet(page).locator('.mealview__macros')).toContainText('71g protein');
+    await expect(sheet(page).locator('.mealview__foods li')).toHaveCount(5);
+    await expect(sheet(page).locator('.mealview__plan')).toContainText('Plan for 2nd meal: 39g protein');
+    await page.keyboard.press('Escape');
+
+    // the plan stays on screen and is ticked; the day counts what was eaten
+    await expect(page.getByRole('button', { name: '2nd meal done' })).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.getByRole('article', { name: '2nd meal' }).locator('.planmeal__logged'))
+      .toHaveText('Logged: 71g protein · 498 kcal · plan 330 kcal');
+    await expect(page.locator('.macro').filter({ hasText: 'Protein' }).locator('strong')).toHaveText('71g');
+
+    await page.reload();
+    await tab(page, 'Meals').click();
+    await expect(page.locator('.macro').filter({ hasText: 'Protein' }).locator('strong')).toHaveText('71g');
+    expect(errors).toEqual([]);
+  });
+
+  test('when the AI is unavailable a banner says so and the planned macros are stamped', async ({ page }) => {
+    await stubAI(page, { status: 429, json: { error: 'The meal AI has used up its requests for today.' } });
+    await openApp(page, LUNCH);
+    const cam = await openCamFor(page, '2nd meal');
+
+    await cam.getByRole('textbox', { name: "What's in this meal?" }).fill('chicken and rice');
+    await cam.getByRole('button', { name: 'Analyze' }).click();
+    const banner = cam.getByRole('alert');
+    await expect(banner).toContainText('AI is unavailable right now.');
+    await expect(banner).toContainText('used up its requests for today');
+    await expect(banner).toContainText('Your planned macros will be stamped instead.');
+
+    await cam.getByRole('button', { name: 'Take photo' }).click();
+    await expect(sheet(page).locator('.sheet__title')).toHaveText('2nd meal saved');
+    await expect(sheet(page).locator('.mealview__macros')).toContainText('39g protein');
+    await expect(sheet(page).locator('.mealview__plan')).toHaveText('Planned macros: the AI was unavailable when this was taken.');
+    await expect(sheet(page).locator('.mealview__note')).toHaveText('“chicken and rice”');
+    await page.keyboard.press('Escape');
+    await expect(page.locator('.macro').filter({ hasText: 'Protein' }).locator('strong')).toHaveText('39g');
+  });
+
+  test('a food the AI could not match can be found and counted', async ({ page }) => {
+    await stubAI(page, { json: { items: [{ food: null, name: 'bananas', amount: 2, unit: 'pcs' }] } });
+    await openApp(page, LUNCH);
+    const cam = await openCamFor(page, '2nd meal');
+
+    await cam.getByRole('textbox', { name: "What's in this meal?" }).fill('two bananas');
+    await cam.getByRole('button', { name: 'Analyze' }).click();
+    await expect(cam.locator('.cam__totals')).toContainText('Nothing counted yet');
+    await cam.getByRole('button', { name: 'Find' }).click();
+
+    await expect(sheet(page).locator('.sheet__title')).toHaveText('Find bananas');
+    await sheet(page).getByRole('button', { name: /^Banana/ }).click();
+    await sheet(page).getByRole('button', { name: '2', exact: true }).click();
+    await sheet(page).getByRole('button', { name: 'Count this food' }).click();
+
+    await expect(cam).toBeVisible();
+    await expect(cam.getByRole('spinbutton', { name: 'Amount of Banana' })).toHaveValue('2');
+    await expect(cam.locator('.cam__ate')).toHaveText('You ate: 3g protein · 54g carbs · 1g fat · 210 kcal');
+  });
+});
+
 test.describe('Meal plan', () => {
   const OLD_PLAN = [
     '5 boiled eggs, 3 okra, 200g rice',

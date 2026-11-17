@@ -8,7 +8,7 @@
              kept, so days you actually train work offline.
    ═══════════════════════════════════════════════════════════ */
 
-const VERSION = 'v39';
+const VERSION = 'v40';
 const SHELL = `bals-planner-shell-${VERSION}`;
 const ART   = `bals-planner-art-${VERSION}`;
 const ART_LIMIT = 700;            // ≈230 exercises' worth of frames
@@ -81,6 +81,8 @@ self.addEventListener('fetch', event => {
 
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return;
+  // the meal AI is live data, never cached
+  if (url.pathname.includes('/api/')) return;
 
   /* Navigations: network first, fall back to the cached shell. */
   if (request.mode === 'navigate') {

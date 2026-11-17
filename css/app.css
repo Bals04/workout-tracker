@@ -889,7 +889,65 @@ select.optedit__unit { width: auto; padding: 9px 30px 9px 10px; font-size: .82re
   background: rgb(0 0 0 / .55); font-size: .9rem; font-weight: 700;
 }
 .cam__status { position: absolute; inset: auto 24px 50%; text-align: center; font-size: .9rem; line-height: 1.55; color: rgb(255 255 255 / .82); }
-.cam__bar { padding: 14px 16px 18px; display: grid; gap: 16px; }
+.cam__bar { padding: 14px 16px 18px; display: grid; gap: 16px; max-height: 62dvh; overflow-y: auto; overscroll-behavior: contain; }
+.cam[hidden] { display: none; }
+
+/* "What's in it?" — typed, analyzed, checked, then stamped */
+.cam__ai { display: grid; gap: 8px; width: 100%; max-width: 520px; justify-self: center; }
+.cam__type { display: flex; gap: 8px; align-items: stretch; }
+.cam__text {
+  flex: 1; min-width: 0; resize: none; font: inherit; font-size: 16px; line-height: 1.4;   /* 16px: no iOS zoom */
+  padding: 9px 12px; border-radius: 14px; color: #fff;
+  background: rgb(255 255 255 / .1); border: 1px solid rgb(255 255 255 / .18);
+}
+.cam__text::placeholder { color: rgb(255 255 255 / .5); }
+.cam__text:focus-visible { outline: 2px solid #D4FF4F; outline-offset: 1px; }
+.cam__analyze {
+  appearance: none; cursor: pointer; flex: none; padding: 0 16px; border-radius: 14px; border: 0;
+  background: #408c74; color: #fff; font: inherit; font-size: .82rem; font-weight: 750;
+}
+.cam__analyze:disabled { opacity: .45; cursor: default; }
+.cam__analyze:focus-visible { outline: 3px solid #D4FF4F; outline-offset: 2px; }
+.cam__banner {
+  padding: 10px 12px; border-radius: 12px; font-size: .78rem; line-height: 1.45;
+  background: rgb(232 178 58 / .16); border: 1px solid rgb(232 178 58 / .45); color: #fde9b5;
+}
+.cam__banner strong { color: #fff; }
+.cam__items { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.cam__item {
+  display: flex; align-items: center; gap: 8px; padding: 6px 6px 6px 12px; border-radius: 12px;
+  background: rgb(255 255 255 / .07);
+}
+.cam__item.is-missing { background: rgb(224 53 47 / .14); }
+.cam__iname { flex: 1; min-width: 0; display: grid; font-size: .84rem; font-weight: 650; }
+.cam__iname small { font-size: .7rem; font-weight: 600; color: rgb(255 255 255 / .6); }
+.cam__item.is-missing .cam__iname small { color: #ffb3ae; }
+.cam__amtwrap { display: flex; align-items: center; gap: 4px; flex: none; }
+.cam__amt {
+  width: 68px; padding: 6px 8px; border-radius: 10px; font: inherit; font-size: 16px; text-align: right; color: #fff;
+  background: rgb(0 0 0 / .35); border: 1px solid rgb(255 255 255 / .18);
+}
+.cam__unit { font-size: .74rem; color: rgb(255 255 255 / .65); width: 24px; }
+.cam__find {
+  appearance: none; cursor: pointer; flex: none; padding: 7px 12px; border-radius: 999px; border: 0;
+  background: #fff; color: #000; font: inherit; font-size: .76rem; font-weight: 750;
+}
+.cam__x {
+  appearance: none; cursor: pointer; flex: none; width: 34px; height: 34px; border-radius: 50%; border: 0;
+  display: grid; place-items: center; background: transparent; color: rgb(255 255 255 / .7);
+}
+.cam__x svg { width: 16px; height: 16px; }
+.cam__totals { display: grid; gap: 3px; text-align: center; }
+.cam__ate { font-size: .8rem; color: #fff; }
+.cam__vs { font-size: .72rem; color: rgb(255 255 255 / .68); text-align: center; }
+
+/* A meal photo opened: what was eaten, the plan, and what was typed */
+.mealview__foods { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 4px; font-size: .82rem; }
+.mealview__foods li { display: flex; justify-content: space-between; gap: 10px; padding: 6px 10px; border-radius: 10px; background: var(--surface-2); }
+.mealview__foods li.is-missing { color: var(--text-dim); }
+.mealview__plan, .mealview__note { margin-top: 8px; font-size: .76rem; color: var(--text-dim); text-align: center; line-height: 1.45; }
+.planmeal__logged { padding: 8px 14px 0; font-size: .76rem; color: var(--text-dim); }
+.planmeal__logged b { color: var(--text); font-weight: 750; }
 .cam__mealpick { display: grid; gap: 8px; justify-items: center; }
 .cam__meals { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 6px; }
 .cam__ask { width: 100%; text-align: center; font-size: .78rem; font-weight: 700; color: rgb(255 255 255 / .8); margin-bottom: 2px; }

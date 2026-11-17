@@ -127,8 +127,9 @@ const Meals = (() => {
       }
     }
 
-    // "Meal snapshot" as a green pill, so it reads on any background
-    const label = tag ? `Meal snapshot · ${tag.title}` : 'Meal snapshot', size = 3.4 * u, px = 2.6 * u, py = 1.5 * u;
+    // "Meal snapshot" as a green pill, so it reads on any background.
+    // "planned" tells the coach these are the plan's numbers, not what was analyzed.
+    const label = tag ? `Meal snapshot · ${tag.title}${tag.planned ? ' · planned' : ''}` : 'Meal snapshot', size = 3.4 * u, px = 2.6 * u, py = 1.5 * u;
     g.font = font(750, size);
     g.textBaseline = 'middle';
     const tw = g.measureText(label).width, th = size + py * 2, tx = pad, ty = pad * .7;
@@ -154,11 +155,17 @@ const Meals = (() => {
       c.toBlob(b => b ? resolve(b) : reject(new Error('Could not encode photo')), 'image/jpeg', .85));
   }
 
-  async function save(blob, when, source, tag) {
+  /**
+   * `tag` is the planned meal(s) picked; `extra` carries what was typed
+   * (note), the AI's analysis (ai: { text, items, macros }) and whether
+   * the AI was unavailable at the time (aiUnavailable).
+   */
+  async function save(blob, when, source, tag, extra = {}) {
     const meal = {
       id: `m${when.getTime()}${Math.random().toString(36).slice(2, 6)}`,
       ts: when.getTime(), date: Store.iso(when), source, blob,
-      ...(tag ? { plan: { mealIds: tag.ids, title: tag.title, macros: tag.macros, foods: tag.foods } } : {})
+      ...(tag ? { plan: { mealIds: tag.ids, title: tag.title, macros: tag.macros, foods: tag.foods } } : {}),
+      ...extra
     };
     await put(meal);
     // ask once that the browser not evict the photos under storage pressure
@@ -183,7 +190,7 @@ const Meals = (() => {
    * `choices`: the day's planned meals [{ id, title, macros, foods }] to tag
    * the photo with; `preselect`: the id suggested (the next meal not eaten).
    */
-  function capture({ choices = [], preselect = null } = {}) {
+  function capture({ choices = [], preselect = null, findFood = null } = {}) {
     return new Promise(resolve => {
       let stream = null, busy = false;
       // several meals can be picked, for when two are eaten as one
@@ -227,8 +234,154 @@ const Meals = (() => {
           }, 'No meal'));
         const tag = currentTag();
         pickInfo.textContent = tag ? `${tag.title}: ${macroText(tag.macros)}` : 'Photo without meal details';
+        paintTotals();
       };
+
+      /* "What's in it?" — typed before the shot, analyzed by the AI
+         against this device's foods. The confirmed macros are what
+         gets burned into the photo. */
+      let aiState = 'idle';        // 'idle' | 'loading' | 'done' | 'unavailable'
+      let aiItems = [];            // [{ food, name, amount, unit, guessed }]
+      let aiText = '';             // the text the items came from
+      let aiError = '';
+      let aiRun = 0;
+      const textBox = el('textarea', { class: 'cam__text', rows: 2, maxlength: 500,
+        'aria-label': "What's in this meal?", placeholder: "What's in it? e.g. 5 eggs, 1 cup rice, 3 okra" });
+      const analyzeBtn = el('button', { class: 'cam__analyze', type: 'button' }, 'Analyze');
+      const aiOut = el('div', { class: 'cam__aiout' });
+      const aiTotals = el('div', { class: 'cam__totals num', 'aria-live': 'polite' });
+
+      /** The confirmed analysis, or null when there is nothing to count. */
+      const analysis = () => {
+        if (aiState !== 'done') return null;
+        const known = aiItems.filter(it => it.food && it.amount > 0);
+        if (!known.length) return null;
+        return {
+          text: aiText,
+          items: aiItems.map(it => ({ ...it })),
+          macros: Nutrition.sum(known.map(it => Nutrition.macros(it)))
+        };
+      };
+
+      const signed = n => `${n > 0 ? '+' : n < 0 ? '−' : '±'}${Math.abs(r0(n))}`;
+      function paintTotals() {
+        const ai = analysis(), plan = currentTag();
+        const lines = [];
+        if (aiState === 'done') {
+          const missing = aiItems.filter(it => !it.food).length;
+          if (ai) {
+            lines.push(el('p', { class: 'cam__ate' }, [el('b', { text: 'You ate: ' }), macroText(ai.macros)]));
+            if (plan) {
+              const d = k => ai.macros[k] - plan.macros[k];
+              lines.push(el('p', { class: 'cam__vs', text: `vs ${plan.title} plan: ${signed(d('p'))}g protein · ${signed(d('c'))}g carbs · ${signed(d('f'))}g fat · ${signed(d('kcal'))} kcal` }));
+            }
+          } else {
+            lines.push(el('p', { class: 'cam__vs', text: plan
+              ? 'Nothing counted yet. Find the foods, or your planned macros will be stamped.'
+              : 'Nothing counted yet. Find the foods, or the photo goes without macros.' }));
+          }
+          if (missing) lines.push(el('p', { class: 'cam__vs', text: `${missing} food${missing === 1 ? ' is' : 's are'} not in your foods and not counted.` }));
+        }
+        aiTotals.replaceChildren(...lines);
+      }
+
+      function paintAI() {
+        analyzeBtn.disabled = aiState === 'loading' || !textBox.value.trim();
+        analyzeBtn.textContent = aiState === 'loading' ? 'Analyzing…' : 'Analyze';
+        if (aiState === 'unavailable') {
+          aiOut.replaceChildren(el('div', { class: 'cam__banner', role: 'alert' }, [
+            el('strong', { text: 'AI is unavailable right now.' }),
+            ` ${aiError} `,
+            currentTag() ? 'Your planned macros will be stamped instead.' : 'The photo will be stamped without macros.'
+          ]));
+        } else if (aiState === 'done') {
+          aiOut.replaceChildren(aiItems.length
+            ? el('ul', { class: 'cam__items', 'aria-label': 'Foods found' }, aiItems.map(itemRow))
+            : el('p', { class: 'cam__vs', text: 'No foods found in that. Try naming them, e.g. "2 eggs, 150g rice".' }));
+        } else {
+          aiOut.replaceChildren();
+        }
+        paintTotals();
+      }
+
+      function itemRow(it) {
+        const remove = el('button', { class: 'cam__x', type: 'button', 'aria-label': `Remove ${it.name}`,
+          onclick: () => { aiItems = aiItems.filter(x => x !== it); paintAI(); } }, svg(ICON_X, { width: 2.4 }));
+        if (!it.food) {
+          return el('li', { class: 'cam__item is-missing' }, [
+            el('span', { class: 'cam__iname' }, [it.name, el('small', { text: 'Not in your foods' })]),
+            findFood ? el('button', { class: 'cam__find', type: 'button', onclick: () => find(it) }, 'Find') : null,
+            remove
+          ]);
+        }
+        const amount = el('input', { class: 'cam__amt num', type: 'number', inputmode: 'decimal', min: 0, step: it.unit === 'pcs' ? 1 : 5,
+          value: String(it.amount), 'aria-label': `Amount of ${it.name}` });
+        amount.addEventListener('input', () => { it.amount = Math.max(0, Number(amount.value) || 0); it.guessed = false; paintTotals(); });
+        return el('li', { class: 'cam__item' }, [
+          el('span', { class: 'cam__iname' }, [it.name, it.guessed ? el('small', { text: 'amount estimated, check it' }) : null]),
+          el('span', { class: 'cam__amtwrap' }, [amount, el('span', { class: 'cam__unit', text: it.unit === 'pcs' ? 'pcs' : 'g' })]),
+          remove
+        ]);
+      }
+
+      /** Look a missing food up (your foods, USDA, or typed in), then count it. */
+      async function find(it) {
+        root.hidden = true;
+        let opt = null;
+        try { opt = await findFood(it.name); } finally {
+          root.hidden = false;
+          app.inert = true;
+          document.body.style.overflow = 'hidden';
+          video.play?.().catch(() => {});
+        }
+        if (opt?.food) Object.assign(it, { food: opt.food, name: opt.name, amount: opt.amount, unit: opt.unit, guessed: false });
+        paintAI();
+      }
+
+      async function analyzeNow() {
+        const text = textBox.value.trim();
+        if (!text || aiState === 'loading') return;
+        const run = ++aiRun;
+        aiState = 'loading';
+        paintAI();
+        try {
+          const items = await Nutrition.analyze(text);
+          if (run !== aiRun) return;
+          aiItems = items;
+          aiState = 'done';
+        } catch (err) {
+          if (run !== aiRun) return;
+          console.warn('[meal-ai]', err);
+          aiError = err?.message || '';
+          aiState = 'unavailable';
+        }
+        aiText = text;
+        paintAI();
+      }
+
+      analyzeBtn.onclick = analyzeNow;
+      textBox.addEventListener('input', () => {
+        // new words, new analysis: the old list no longer describes the meal
+        if (aiState !== 'idle' && textBox.value.trim() !== aiText) { aiRun++; aiState = 'idle'; aiItems = []; }
+        paintAI();
+      });
+      textBox.addEventListener('keydown', e => {
+        if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); analyzeNow(); }
+      });
+
+      /** False (and the AI started) when typed text has not been analyzed yet. */
+      function readyToShoot() {
+        if (aiState === 'loading') return false;
+        if (aiState === 'idle' && textBox.value.trim()) {
+          analyzeNow();
+          UI.toast('Check the foods, then take the photo');
+          return false;
+        }
+        return true;
+      }
+
       if (choices.length) paintPicker();
+      paintAI();
 
       const paintClock = () => { clock.textContent = timeOf(new Date()); };
       paintClock();
@@ -238,11 +391,17 @@ const Meals = (() => {
         el('div', { class: 'cam__stage' }, [video, clock, status]),
         el('div', { class: 'cam__bar' }, [
           choices.length ? el('div', { class: 'cam__mealpick' }, [picker, pickInfo]) : null,
+          el('div', { class: 'cam__ai' }, [
+            el('div', { class: 'cam__ask', text: "What's in it? The AI matches it to your foods." }),
+            el('div', { class: 'cam__type' }, [textBox, analyzeBtn]),
+            aiOut, aiTotals
+          ]),
           el('div', { class: 'cam__controls' }, [closeBtn, shutter, el('span')])
         ])
       ]);
 
-      const onKey = e => { if (e.key === 'Escape') { e.preventDefault(); finish(null); } };
+      // while a food is being looked up the camera steps aside for that sheet
+      const onKey = e => { if (e.key === 'Escape' && !root.hidden) { e.preventDefault(); finish(null); } };
 
       function finish(meal) {
         clearInterval(tick);
@@ -263,8 +422,16 @@ const Meals = (() => {
         try {
           root.classList.add('is-flash');
           const tag = currentTag();
-          const blob = await stamp(source, sw, sh, when, tag);
-          finish(await save(blob, when, origin, tag));
+          const ai = analysis();
+          const note = textBox.value.trim();
+          // the analyzed macros go on the photo; without them, the plan's — marked "planned"
+          const onPhoto = ai ? { title: tag?.title || 'Meal', macros: ai.macros } : tag ? { ...tag, planned: true } : null;
+          const blob = await stamp(source, sw, sh, when, onPhoto);
+          finish(await save(blob, when, origin, tag, {
+            ...(ai ? { ai } : {}),
+            ...(note ? { note } : {}),
+            ...(aiState === 'unavailable' ? { aiUnavailable: true } : {})
+          }));
         } catch (err) {
           console.error(err);
           UI.toast('Could not save that photo — try again');
@@ -298,11 +465,11 @@ const Meals = (() => {
         status.textContent = reason;
         shutter.disabled = false;
         shutter.setAttribute('aria-label', 'Open camera');
-        shutter.onclick = () => input.click();
+        shutter.onclick = () => { if (readyToShoot()) input.click(); };
         root.append(input);
       }
 
-      shutter.onclick = () => shoot(video, video.videoWidth, video.videoHeight, 'live-camera');
+      shutter.onclick = () => { if (readyToShoot()) shoot(video, video.videoWidth, video.videoHeight, 'live-camera'); };
       closeBtn.onclick = () => finish(null);
       document.addEventListener('keydown', onKey);
       app.inert = true;
@@ -363,9 +530,11 @@ const Meals = (() => {
   async function share(meals) {
     const files = toFiles(meals);
     const text = meals.slice().sort((a, b) => a.ts - b.ts)
-      .map(m => m.plan
-        ? `${m.plan.title} — ${stampText(m.ts)} — ${macroText(m.plan.macros)}`
-        : `Meal — ${stampText(m.ts)}`).join('\n');
+      .map(m => m.ai
+        ? `${m.plan?.title || 'Meal'} — ${stampText(m.ts)} — ${macroText(m.ai.macros)}${m.note ? ` (${m.note})` : ''}`
+        : m.plan
+          ? `${m.plan.title} — ${stampText(m.ts)} — ${macroText(m.plan.macros)} (planned)`
+          : `Meal — ${stampText(m.ts)}`).join('\n');
     if (await shareSheet(files, text)) return;
     download(files);
     UI.toast(files.length > 1 ? `${files.length} photos downloaded` : 'Photo downloaded');

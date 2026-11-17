@@ -24,8 +24,27 @@ const MIME = {
   '.md': 'text/plain; charset=utf-8',
 };
 
+/* Load .env (KEY=value lines) so the meal AI works locally, the
+   way Vercel's environment variables do in production. */
+try {
+  for (const line of fs.readFileSync(path.resolve(__dirname, '..', '.env'), 'utf8').split(/\r?\n/)) {
+    const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*?)\s*$/);
+    if (m && !line.trim().startsWith('#') && !(m[1] in process.env)) process.env[m[1]] = m[2].replace(/^(['"])(.*)\1$/, '$2');
+  }
+} catch { /* no .env: the meal AI answers "not set up", the rest works */ }
+
+/* Same routes as Vercel's /api functions. */
+const API = { '/api/meal-ai': () => require('../api/meal-ai.js') };
+
 http.createServer((req, res) => {
   let pathname = decodeURIComponent(url.parse(req.url).pathname);
+  if (API[pathname]) {
+    Promise.resolve(API[pathname]()(req, res)).catch(err => {
+      console.error(err);
+      if (!res.headersSent) res.writeHead(500).end('{"error":"Server error"}');
+    });
+    return;
+  }
   if (pathname.endsWith('/')) pathname += 'index.html';
 
   const file = path.join(ROOT, pathname);

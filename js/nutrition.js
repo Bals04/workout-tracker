@@ -246,5 +246,51 @@ const Nutrition = (() => {
     });
   }
 
-  return { BUILTIN, get, all, match, search, correct, parseLine, macros, sum, amountLabel, usdaSearch, ZERO };
+  /* ── meal AI ─────────────────────────────────────────────
+     The AI (api/meal-ai.js) reads "5 eggs, a cup of rice" and
+     picks foods from this device's list. It never supplies the
+     numbers: macros() below works those out, as for the plan. */
+
+  /** The food list the AI may choose from: what it needs to match, nothing more. */
+  const aiFoods = () => all().filter(food => food.per100).map(food => ({
+    id: food.id, name: food.name,
+    ...(food.aliases?.length ? { aliases: food.aliases } : {}),
+    ...(food.piece ? { piece: food.piece } : {})
+  }));
+
+  /**
+   * Analyze a typed meal. Resolves to items
+   * [{ food: id | null, name, amount, unit, guessed }] — food is null
+   * for anything not in this device's list. Rejects with a LookupError
+   * when the AI can't be used (offline, not set up, out of quota).
+   */
+  async function analyze(text) {
+    if (navigator.onLine === false) throw new LookupError('You are offline.', 'offline');
+    let res;
+    try {
+      res = await fetch('api/meal-ai', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text, foods: aiFoods() }),
+        signal: AbortSignal.timeout?.(30000)
+      });
+    } catch {
+      throw new LookupError('The meal AI could not be reached.', 'offline');
+    }
+    const data = await res.json().catch(() => null);
+    if (!res.ok || !Array.isArray(data?.items)) {
+      throw new LookupError(data?.error || 'The meal AI is not available right now.', res.status === 429 ? 'limit' : 'server');
+    }
+    // trust nothing from the network: unknown ids become "not in your foods"
+    return data.items.flatMap(it => {
+      const food = typeof it?.food === 'string' ? get(it.food) : null;
+      const amount = Number(it?.amount);
+      const name = food?.name || String(it?.name || '').trim();
+      if (!name) return [];
+      const unit = it?.unit === 'pcs' && food?.piece ? 'pcs' : 'g';
+      return [{ food: food?.id || null, name, amount: amount > 0 ? amount : (unit === 'pcs' ? 1 : 100), unit, guessed: !!it?.guessed }];
+    });
+  }
+
+  return { BUILTIN, get, all, match, search, correct, parseLine, macros, sum, amountLabel, usdaSearch, analyze, ZERO };
 })();

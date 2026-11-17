@@ -652,7 +652,7 @@
 
     const plan = Store.getMealPlan();
     const offer = saved && plan.length && planKey(saved) !== planKey(plan) && Store.settings.dismissedPlan !== planKey(saved);
-    root.append(mealPlanCard(today, offer ? planOffer(saved) : null));
+    root.append(mealPlanCard(today, offer ? planOffer(saved) : null, todays));
 
     const byDate = new Map();
     for (const m of meals) {
@@ -754,9 +754,17 @@
   }
 
   /** Today's meals: totals, a done-check per meal, and the either/or picks. */
-  function mealPlanCard(date, offer = null) {
+  /**
+   * `snaps` are the day's meal photos. One the AI analyzed counts what
+   * was actually eaten, in place of the planned meals it was tagged with;
+   * meals ticked by hand still count their planned macros.
+   */
+  function mealPlanCard(date, offer = null, snaps = []) {
     const plan = Store.getMealPlan();
     const day = Store.mealDay(date);
+    const analyzed = snaps.filter(s => s.ai?.macros);
+    const loggedFor = new Map();       // plan meal id → the analyzed photo covering it
+    for (const s of analyzed) for (const id of s.plan?.mealIds || []) if (!loggedFor.has(id)) loggedFor.set(id, s);
     const wrap = el('section', { 'aria-labelledby': 'mealplan-title' }, [
       el('div', { class: 'sechead' }, [
         el('h2', { id: 'mealplan-title', text: "Today's meals" }),
@@ -779,7 +787,10 @@
 
     const doneMeals = plan.filter(m => day.done[m.id]);
     const planned = Nutrition.sum(plan.map(m => mealMacros(m, day)));
-    const eaten = Nutrition.sum(doneMeals.map(m => mealMacros(m, day)));
+    const eaten = Nutrition.sum([
+      ...analyzed.map(s => s.ai.macros),
+      ...doneMeals.filter(m => !loggedFor.has(m.id)).map(m => mealMacros(m, day))
+    ]);
     const allDone = doneMeals.length === plan.length;
     wrap.append(el('div', { class: 'card macros' + (allDone ? ' is-done' : '') }, [
       el('div', { class: 'macros__head' }, [
@@ -817,12 +828,24 @@
           el('h3', { text: title }),
           el('span', { class: 'planmeal__sum num', text: `${r0(m.p)}g protein · ${r0(m.kcal)} kcal` })
         ]),
+        loggedFor.has(meal.id) ? loggedLine(loggedFor.get(meal.id), m) : null,
         meal.items.length
           ? el('ul', { class: 'planmeal__foods' }, meal.items.map(item => foodRow(item, day, date)))
           : el('p', { class: 'planmeal__empty', text: 'No foods yet — tap Edit plan.' })
       ]));
     });
     return wrap;
+  }
+
+  /** "Logged: 45g protein · 640 kcal · plan 520 kcal" under a planned meal the AI analyzed. */
+  function loggedLine(snap, planned) {
+    const a = snap.ai.macros;
+    const shared = snap.plan.mealIds.length > 1 ? ` (${snap.plan.title})` : '';
+    return el('p', { class: 'planmeal__logged num' }, [
+      el('b', { text: `Logged${shared}: ` }),
+      `${r0(a.p)}g protein · ${r0(a.kcal)} kcal`,
+      el('span', { text: ` · plan ${r0(planned.kcal)} kcal` })
+    ]);
   }
 
   /** Whole grams from 10 up; one decimal below, where it still matters. */
@@ -1331,11 +1354,44 @@
       macros: mealMacros(meal, day),
       foods: meal.items.map(item => { const o = item.options[pickOf(day, item)]; return `${Nutrition.amountLabel(o)} ${o.name}`; })
     }));
-    const meal = await Meals.capture({ choices, preselect: plan.find(m => !day.done[m.id])?.id });
+    const meal = await Meals.capture({
+      choices, preselect: plan.find(m => !day.done[m.id])?.id,
+      // a food the AI could not match: look it up like in Edit plan, then size it
+      findFood: name => new Promise(resolve => openFoodPicker({
+        title: `Find ${name}`, action: 'Count this food', initial: name, single: true,
+        onPick: ([option]) => resolve(option), back: () => resolve(null)
+      }))
+    });
     // a photo of planned meals ticks them off
     for (const id of meal?.plan?.mealIds || []) if (!Store.mealDay(today).done[id]) Store.toggleMealDone(today, id);
     renderAll();
     if (meal) openMeal(meal, { fresh: true });
+  }
+
+  const macroRow = (mac, cls = 'mealview__macros') => el('p', { class: `${cls} num` }, [
+    ...MACROS.map(({ key, label }) => el('span', {}, [mdot(key), `${r0(mac[key])}g ${label.toLowerCase()}`])),
+    el('span', { text: `${r0(mac.kcal)} kcal` })
+  ]);
+
+  /** What a meal photo says it was: analyzed foods first, else the plan's numbers. */
+  function mealFacts(meal) {
+    const out = [];
+    if (meal.ai) {
+      out.push(macroRow(meal.ai.macros),
+        el('ul', { class: 'mealview__foods', 'aria-label': 'Foods eaten' }, meal.ai.items.map(it =>
+          el('li', { class: it.food ? '' : 'is-missing' }, [
+            el('span', { text: it.name }),
+            el('span', { class: 'num', text: it.food ? Nutrition.amountLabel(it) : 'not counted' })
+          ]))));
+      if (meal.plan) out.push(el('p', { class: 'mealview__plan num', text: `Plan for ${meal.plan.title}: ${Meals.macroText(meal.plan.macros)}` }));
+    } else if (meal.plan) {
+      out.push(macroRow(meal.plan.macros),
+        el('p', { class: 'mealview__plan', text: meal.aiUnavailable
+          ? 'Planned macros: the AI was unavailable when this was taken.'
+          : 'Planned macros' }));
+    }
+    if (meal.note) out.push(el('p', { class: 'mealview__note', text: `“${meal.note}”` }));
+    return out;
   }
 
   function openMeal(meal, { fresh = false } = {}) {
@@ -1345,10 +1401,7 @@
       body.append(
         el('img', { class: 'mealview', src: url, alt: `${title} photo, stamped ${Meals.stampText(meal.ts)}` }),
         el('p', { class: 'mealview__stamp num', text: Meals.stampText(meal.ts) }),
-        meal.plan ? el('p', { class: 'mealview__macros num' }, [
-          ...MACROS.map(({ key, label }) => el('span', {}, [mdot(key), `${r0(meal.plan.macros[key])}g ${label.toLowerCase()}`])),
-          el('span', { text: `${r0(meal.plan.macros.kcal)} kcal` })
-        ]) : null,
+        ...mealFacts(meal),
         el('div', { class: 'stack', style: 'margin-top:14px' }, [
           el('button', { class: 'btn btn--primary btn--block btn--lg', type: 'button',
             onclick: () => Meals.share([meal]) }, [svg(Meals.ICON_SHARE, { width: 2 }), 'Send to coach']),

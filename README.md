@@ -187,3 +187,21 @@ App code: MIT. Exercise artwork and metadata: **CC BY-SA 4.0**, by Bryl Lim,
 derived from [Everkinetic](https://github.com/everkinetic/data). See
 `ATTRIBUTION.md` and `LICENSE-ASSETS`. If you redistribute the artwork, CC BY-SA
 requires you keep that attribution and share alike.
+
+## Meal AI
+
+When you snap a meal you can type what's in it ("5 eggs, 1 cup rice, some
+okra") and tap **Analyze**. `api/meal-ai.js`, a Vercel serverless function,
+asks an LLM to match the text against **your own food list**: the built-in
+foods plus any you saved from USDA. The AI only picks foods and amounts. The
+app calculates the macros from its own table, so the numbers on the photo are
+never made up. Foods it can't match show up as "Not in your foods" with a
+**Find** button. You check and edit the list, then take the photo, and those
+macros are what get stamped.
+
+If the AI is unavailable (offline, out of quota, not set up), a banner says so
+and the planned macros are stamped instead, labelled "planned".
+
+Setup: copy `.env.example` to `.env` for local use (`npm start` reads it), and
+add the same `AI_*` variables in Vercel → Project → Settings → Environment
+Variables for production.
