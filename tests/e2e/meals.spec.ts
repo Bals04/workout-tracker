@@ -304,6 +304,56 @@ test.describe('Meal AI', () => {
     await expect(cam.locator('.cam__kcal')).toHaveText('210 kcal');
     await expect(cam.locator('.cam__sum .cam__pills')).toHaveText(/3g protein\s*54g carbs\s*1g fat/);
   });
+
+  test('while the AI works, Coach Baw thinks it over', async ({ page }) => {
+    let release!: () => void;
+    const answered = new Promise<void>(r => { release = r; });
+    await page.context().route('**/api/meal-ai', async route => {
+      await answered;
+      await route.fulfill({ json: { items: [{ food: 'egg', name: 'Egg, boiled', amount: 2, unit: 'pcs', guessed: false }] } });
+    });
+    await openApp(page, LUNCH);
+    const cam = await openCamFor(page, '2nd meal');
+    await cam.getByRole('textbox', { name: "What's in this meal?" }).fill('2 eggs');
+    await cam.getByRole('button', { name: 'Analyze', exact: true }).click();
+
+    const thinking = cam.locator('.cam__thinking');
+    await expect(thinking).toBeVisible();
+    await expect(thinking.locator('.cam__coach')).toHaveAttribute('src', 'mascot/coach-thinking.png');
+    await expect(thinking.getByRole('status').or(thinking)).toContainText('Reading your meal');
+    await expect(thinking).toContainText('Checking your foods');            // the bubble moves on
+    await expect(cam.getByRole('button', { name: 'Analyzing…' })).toBeDisabled();
+
+    release();
+    await expect(thinking).toHaveCount(0);
+    await expect(cam.locator('.cam__kcal')).toHaveText('155 kcal');
+  });
+
+  test('the thinking overlay can be cancelled, leaving the form as it was', async ({ page }) => {
+    await page.context().route('**/api/meal-ai', () => {});      // never answers
+    await openApp(page, LUNCH);
+    const cam = await openCamFor(page, '2nd meal');
+    const box = cam.getByRole('textbox', { name: "What's in this meal?" });
+    await box.fill('2 eggs');
+    await cam.getByRole('button', { name: 'Analyze', exact: true }).click();
+
+    const overlay = cam.locator('.cam__overlay');
+    await expect(overlay).toBeVisible();
+    await expect(overlay.locator('.cam__glow .cam__coach')).toBeVisible();
+    await overlay.getByRole('button', { name: 'Cancel' }).click();
+
+    await expect(overlay).toBeHidden();
+    await expect(box).toHaveValue('2 eggs');
+    await expect(box).toBeFocused();
+    await expect(cam.getByRole('button', { name: 'Analyze foods' })).toBeEnabled();
+
+    // Escape cancels too, rather than closing everything
+    await cam.getByRole('button', { name: 'Analyze foods' }).click();
+    await expect(overlay).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(overlay).toBeHidden();
+    await expect(cam).toBeVisible();
+  });
 });
 
 test.describe('Meal plan', () => {

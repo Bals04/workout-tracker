@@ -253,20 +253,27 @@ const Meals = (() => {
 
       /* Which meal — optional; "No meal" keeps the plain stamp */
       const picker = el('div', { class: 'cam__meals', role: 'group', 'aria-label': 'Which meal is this? Tap more than one if you ate them together.' });
+      /* One card per planned meal, showing what's in it, so you can see what you're picking */
+      const checkMark = () => el('span', { class: 'cam__mcheck', 'aria-hidden': 'true' }, svg('M5 12.5l4.5 4.5L19 7.5', { width: 3 }));
       function paintPicker() {
         picker.replaceChildren(
           ...choices.map(c => el('button', {
-            class: 'chip chip--sm', type: 'button', 'aria-pressed': String(picked.has(c.id)),
+            class: 'cam__mcard', type: 'button', 'aria-pressed': String(picked.has(c.id)),
             onclick: () => { if (picked.has(c.id)) picked.delete(c.id); else picked.add(c.id); paintPicker(); }
-          }, c.title)),
+          }, [
+            checkMark(),
+            el('span', { class: 'cam__mtitle', text: c.title }),
+            el('span', { class: 'cam__mkcal num', text: `${r0(c.macros.kcal)} kcal` }),
+            c.foods.length ? el('span', { class: 'cam__mfoods', text: c.foods.join(' · ') }) : null
+          ])),
           el('button', {
-            class: 'chip chip--sm', type: 'button', 'aria-pressed': String(!picked.size),
+            class: 'cam__mcard cam__mcard--none', type: 'button', 'aria-pressed': String(!picked.size),
             onclick: () => { picked.clear(); paintPicker(); }
-          }, 'No meal'));
+          }, [checkMark(), el('span', { class: 'cam__mtitle', text: 'No meal' }), el('span', { class: 'cam__mkcal', text: 'time stamp only' })]));
         paintSummary();
       }
 
-      const textBox = el('textarea', { class: 'cam__text', rows: 2, maxlength: 500,
+      const textBox = el('textarea', { class: 'cam__text', rows: 3, maxlength: 500,
         'aria-label': "What's in this meal?", placeholder: 'e.g. 5 eggs, 1 cup rice, 3 okra' });
       const analyzeBtn = el('button', { class: 'cam__send', type: 'button', 'aria-label': 'Analyze' }, svg(ICON_SEND, { width: 2.4 }));
       const aiOut = el('div', { class: 'cam__aiout' });
@@ -297,11 +304,50 @@ const Meals = (() => {
         nextBtn.replaceChildren(aiState === 'loading' ? 'Analyzing…' : pending ? 'Analyze foods' : 'Open camera');
       }
 
+      /* While the AI works, Coach Baw thinks it over, a speech bubble
+         over his head cycling through what is going on. */
+      const THINKING = ['Reading your meal', 'Checking your foods', 'Weighing the portions', 'Almost there'];
+      let thinkTimer = null;
+      function thinking() {
+        const line = el('span', { class: 'cam__bubbletext', text: THINKING[0] });
+        let i = 0;
+        thinkTimer = setInterval(() => {
+          i = Math.min(i + 1, THINKING.length - 1);
+          line.textContent = THINKING[i];
+          line.classList.remove('is-new');
+          void line.offsetWidth;          // restart the fade-in
+          line.classList.add('is-new');
+        }, 1600);
+        return el('div', { class: 'cam__thinking', role: 'status' }, [
+          el('span', { class: 'cam__bubble' }, [line,
+            el('span', { class: 'cam__dots', 'aria-hidden': 'true' }, [el('i'), el('i'), el('i')])]),
+          el('span', { class: 'cam__glow' }, [
+            el('img', { class: 'cam__coach', src: 'mascot/coach-thinking.png', alt: '', width: 190, height: 190, decoding: 'async' })
+          ])
+        ]);
+      }
+
+      /* The thinking overlay covers the form, so nothing changes under it mid-analysis */
+      const overlay = el('div', { class: 'cam__overlay', hidden: true });
+      const cancelAI = () => { aiRun++; aiState = 'idle'; paintAI(); textBox.focus(); };
+
       function paintAI() {
+        clearInterval(thinkTimer);
         analyzeBtn.disabled = aiState === 'loading' || !textBox.value.trim();
         analyzeBtn.classList.toggle('is-loading', aiState === 'loading');
+        const wasOpen = !overlay.hidden;
         if (aiState === 'loading') {
-          aiOut.replaceChildren(el('p', { class: 'cam__hint', text: 'Matching to your foods…' }));
+          const cancel = el('button', { class: 'cam__cancel', type: 'button', onclick: cancelAI }, 'Cancel');
+          overlay.replaceChildren(thinking(), cancel);
+          overlay.hidden = false;
+          requestAnimationFrame(() => cancel.focus());
+        } else {
+          overlay.hidden = true;
+          overlay.replaceChildren();
+          if (wasOpen && aiState !== 'idle') requestAnimationFrame(() => nextBtn.focus());
+        }
+        if (aiState === 'loading') {
+          // the overlay says it all; what was there stays put underneath
         } else if (aiState === 'unavailable') {
           aiOut.replaceChildren(el('div', { class: 'cam__banner', role: 'alert' }, [
             svg(ICON_WARN, { width: 2 }),
@@ -373,6 +419,13 @@ const Meals = (() => {
         }
         aiText = text;
         paintAI();
+        reveal();
+      }
+
+      /** The meal cards push the result below the fold: bring the text box and what follows into view. */
+      function reveal() {
+        const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+        requestAnimationFrame(() => textBox.scrollIntoView({ block: 'start', behavior: reduce ? 'auto' : 'smooth' }));
       }
 
       analyzeBtn.onclick = analyzeNow;
@@ -395,13 +448,14 @@ const Meals = (() => {
         el('header', { class: 'cam__head' }, [closeBtn, el('h2', { text: 'Log your meal' }), el('span')]),
         el('div', { class: 'cam__scroll' }, [
           choices.length ? el('section', { class: 'cam__sec' }, [el('h3', { class: 'cam__label', text: 'Which meal?' }), picker]) : null,
-          el('section', { class: 'cam__sec' }, [
+          el('section', { class: 'cam__sec cam__sec--ai' }, [
             el('h3', { class: 'cam__label', text: 'What did you eat?' }),
             el('div', { class: 'cam__type' }, [textBox, analyzeBtn]),
             aiOut
           ])
         ]),
-        el('footer', { class: 'cam__foot' }, [summary, nextBtn])
+        el('footer', { class: 'cam__foot' }, [summary, nextBtn]),
+        overlay
       ]);
 
       /* ════ Step 2: shoot ════ */
@@ -446,10 +500,16 @@ const Meals = (() => {
       }
 
       // while a food is being looked up the camera steps aside for that sheet
-      const onKey = e => { if (e.key === 'Escape' && !root.hidden) { e.preventDefault(); finish(null); } };
+      // Escape while analyzing just cancels the analysis
+      const onKey = e => {
+        if (e.key !== 'Escape' || root.hidden) return;
+        e.preventDefault();
+        if (aiState === 'loading') cancelAI(); else finish(null);
+      };
 
       function finish(meal) {
         clearInterval(tick);
+        clearInterval(thinkTimer);
         stream?.getTracks().forEach(t => t.stop());
         document.removeEventListener('keydown', onKey);
         root.remove();
